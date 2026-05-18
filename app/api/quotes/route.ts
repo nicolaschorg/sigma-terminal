@@ -34,11 +34,15 @@ export async function GET(req: NextRequest) {
   const b3Syms    = symbols.filter(isB3);
   const nonB3Syms = symbols.filter(s => !isB3(s));
 
+  // FIIs end in exactly 2 digits (XPML11, MXRF11…) and require .SA for Brapi
+  const isFII = (s: string) => /\d{2}$/.test(s);
+
   // ── Brapi batch for B3 stocks ─────────────────────────────────────────────
   if (b3Syms.length) {
     try {
+      const b3Req = b3Syms.map(s => isFII(s) ? `${s}.SA` : s);
       const r = await fetch(
-        `https://brapi.dev/api/quote/${b3Syms.join(',')}?token=${tok}`,
+        `https://brapi.dev/api/quote/${b3Req.join(',')}?token=${tok}`,
         { cache: 'no-store', signal: abortAfter(8_000).signal }
       );
       if (r.ok) {
@@ -46,10 +50,11 @@ export async function GET(req: NextRequest) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         for (const q of (data.results ?? []) as any[]) {
           if (q.regularMarketPrice == null) continue;
+          // strip .SA so key always matches the bare ticker (e.g. XPML11)
           const sym = String(q.symbol ?? '').replace(/\.SA$/i, '');
           result[sym] = {
             price:     q.regularMarketPrice,
-            change:    q.regularMarketChange    ?? 0,
+            change:    q.regularMarketChange        ?? 0,
             changePct: q.regularMarketChangePercent ?? 0,
           };
         }
