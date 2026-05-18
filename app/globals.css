@@ -1,0 +1,59 @@
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-base:    #080c14;
+  --bg-surface: #0d1421;
+  --bg-raised:  #111927;
+  --bg-header:  #090d18;
+  --border:     #1a2535;
+  --accent:     #f7941d;
+  --positive:   #00c076;
+  --negative:   #ff3b5c;
+  --text-1:     #d4dce8;
+  --text-2:     #5a7a9a;
+  --text-3:     #3a556a;
+  --text-hdr:   #8ba4bc;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-1);
+  font-family: var(--font-mono, 'JetBrains Mono'), 'Fira Code', 'Courier New', monospace;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: slashed-zero tabular-nums;
+}
+
+/* ── Scrollbar — thin, dark ─────────────────────────────────── */
+::-webkit-scrollbar        { width: 3px; height: 3px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* ── Animations ─────────────────────────────────────────────── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+@keyframes ticker-slide {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.blink { animation: blink 1s step-end infinite; }
+@keyframes news-scroll {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+
+/* ── Table row hover ─────────────────────────────────────────── */
+.row { transition: background 0.08s ease; }
+.row:hover { background: var(--bg-raised); }
