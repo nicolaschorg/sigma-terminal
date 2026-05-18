@@ -1,8 +1,8 @@
 'use client';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Panel } from '@/types';
 import { useTerminal } from '@/hooks/useTerminal';
-import { useMarketData, useMarketSymbols } from '@/store/useMarketData';
+import { useMarketData, useMarketSymbols, QuoteSnapshot } from '@/store/useMarketData';
 
 interface QuoteData {
   symbol?: string;
@@ -44,9 +44,12 @@ const fmtPct = (v: number | null | undefined) => {
 function pctStyle(v: number | null | undefined): React.CSSProperties {
   if (v == null) return { color: '#5a7a9a' };
   return v >= 0
-    ? { color: '#00c076', background: 'rgba(0,192,118,0.09)', borderRadius: 2, padding: '1px 4px' }
-    : { color: '#ff3b5c', background: 'rgba(255,59,92,0.09)',  borderRadius: 2, padding: '1px 4px' };
+    ? { color: '#00c076', background: 'rgba(0,192,118,0.09)', borderRadius: 2, padding: '1px 3px' }
+    : { color: '#ff3b5c', background: 'rgba(255,59,92,0.09)',  borderRadius: 2, padding: '1px 3px' };
 }
+
+const varCol = (v: number | null | undefined) =>
+  v == null ? '#5a7a9a' : v >= 0 ? '#00c076' : '#ff3b5c';
 
 function Field({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
@@ -73,19 +76,131 @@ function Err({ msg }: { msg: string }) {
 
 // ── WATCHLIST ─────────────────────────────────────────────────────────────────
 
-const COMPACT_GRID = '1fr 72px 52px 18px';
+// TICKER | PREÇO | DIA% | SEM% | MÊS% | YTD% | ×
+const WL_GRID = '1fr 48px 40px 40px 40px 40px 14px';
+
+interface PerfRow { varWeek: number | null; varMonth: number | null; varYTD: number | null }
+
+const GROUPS: { label: string; symbols: string[] }[] = [
+  { label: 'HB MÉDIA/ALTA',  symbols: ['CYRE3','EZTC3','EVEN3','TRIS3','LAVV3','JHSF3','MTRE3','MELK3','MDNE3','GFSA3'] },
+  { label: 'HB BAIXA RENDA', symbols: ['MRVE3','DIRR3','PLPL3','CURY3','TEND3'] },
+  { label: 'SHOPPINGS',      symbols: ['MULT3','IGTI11','ALOS3'] },
+];
+
+function GroupSeparator({ label }: { label: string }) {
+  return (
+    <div style={{
+      padding: '5px 0 2px', marginTop: 2, borderTop: '1px solid #1a2535',
+      fontSize: 8, letterSpacing: 1, color: '#4a5f75',
+    }}>{label}</div>
+  );
+}
+
+function AvgRow({ syms, quotes, perfMap }: {
+  syms: string[];
+  quotes: Record<string, QuoteSnapshot>;
+  perfMap: Record<string, PerfRow>;
+}) {
+  const avg = (vals: (number | null | undefined)[]) => {
+    const ok = vals.filter((v): v is number => v != null && !isNaN(v));
+    return ok.length ? ok.reduce((a, b) => a + b, 0) / ok.length : null;
+  };
+  const keys = syms.map(s => s.replace(/\.SA$/i, ''));
+  const d = avg(keys.map(k => quotes[k]?.changePct));
+  const w = avg(keys.map(k => perfMap[k]?.varWeek));
+  const m = avg(keys.map(k => perfMap[k]?.varMonth));
+  const y = avg(keys.map(k => perfMap[k]?.varYTD));
+
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: WL_GRID,
+      gap: 2, height: 20, borderBottom: '1px solid #1a2535',
+      fontSize: 9, alignItems: 'center',
+    }}>
+      <span style={{ color: '#f7941d', fontWeight: 700, fontSize: 9 }}>MÉDIA</span>
+      <span />
+      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, ...pctStyle(d) }}>
+        {fmtPct(d)}
+      </span>
+      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: varCol(w) }}>
+        {fmtPct(w)}
+      </span>
+      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: varCol(m) }}>
+        {fmtPct(m)}
+      </span>
+      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: varCol(y) }}>
+        {fmtPct(y)}
+      </span>
+      <span />
+    </div>
+  );
+}
+
+function StockRow({ sym, quotes, perfRow, runCommand, removeFromWatchlist }: {
+  sym: string;
+  quotes: Record<string, QuoteSnapshot>;
+  perfRow?: PerfRow;
+  runCommand: (cmd: string) => { success: boolean };
+  removeFromWatchlist: (sym: string) => void;
+}) {
+  const key = sym.replace(/\.SA$/i, '');
+  const q   = quotes[key];
+  const pct = q?.changePct ?? null;
+  return (
+    <div className="row" style={{
+      display: 'grid', gridTemplateColumns: WL_GRID,
+      gap: 2, height: 20, borderBottom: '1px solid #1a2535',
+      fontSize: 9, alignItems: 'center',
+    }}>
+      <span
+        onClick={() => runCommand(`${key} GP`)}
+        title={`Abrir gráfico de ${key}`}
+        style={{ color: '#f7941d', fontWeight: 600, fontSize: 10, cursor: 'pointer' }}
+      >{key}</span>
+      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#d4dce8', fontSize: 10 }}>
+        {q ? n(q.price) : '—'}
+      </span>
+      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, ...pctStyle(pct) }}>
+        {fmtPct(pct)}
+      </span>
+      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: varCol(perfRow?.varWeek) }}>
+        {fmtPct(perfRow?.varWeek)}
+      </span>
+      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: varCol(perfRow?.varMonth) }}>
+        {fmtPct(perfRow?.varMonth)}
+      </span>
+      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: varCol(perfRow?.varYTD) }}>
+        {fmtPct(perfRow?.varYTD)}
+      </span>
+      <button
+        onClick={() => removeFromWatchlist(sym)}
+        title={`Remover ${key}`}
+        style={{
+          background: 'none', border: 'none', color: '#3a556a',
+          fontSize: 13, cursor: 'pointer', lineHeight: 1,
+          padding: 0, fontFamily: 'inherit', textAlign: 'center',
+          transition: 'color 0.1s',
+        }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ff3b5c'; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#3a556a'; }}
+      >×</button>
+    </div>
+  );
+}
 
 function WatchlistPanel() {
   const { watchlist, addToWatchlist, removeFromWatchlist, runCommand } = useTerminal();
   const quotes = useMarketData(s => s.quotes);
   useMarketSymbols(watchlist);
-  const [adding,   setAdding]   = useState(false);
-  const [input,    setInput]    = useState('');
-  const [addErr,   setAddErr]   = useState<string | null>(null);
+
+  const [adding,     setAdding]     = useState(false);
+  const [input,      setInput]      = useState('');
+  const [addErr,     setAddErr]     = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
+  const [perfMap,    setPerfMap]    = useState<Record<string, PerfRow>>({});
   const inputRef = useRef<HTMLInputElement>(null);
 
-  type WLSortKey = 'ticker' | 'price' | 'day';
+  type WLSortKey = 'ticker' | 'price' | 'day' | 'week' | 'month' | 'ytd';
   const [sortKey,  setSortKey]  = useState<WLSortKey | null>(null);
   const [sortDir,  setSortDir]  = useState<'desc' | 'asc'>('desc');
   const [hoverCol, setHoverCol] = useState<WLSortKey | null>(null);
@@ -97,23 +212,28 @@ function WatchlistPanel() {
     } else { setSortKey(key); setSortDir('desc'); }
   };
 
-  const sortedList = useMemo(() => {
-    if (!sortKey) return watchlist;
-    return [...watchlist].sort((a, b) => {
-      const ka = a.replace(/\.SA$/i, '');
-      const kb = b.replace(/\.SA$/i, '');
-      if (sortKey === 'ticker') {
-        const r = ka.localeCompare(kb);
-        return sortDir === 'desc' ? -r : r;
-      }
-      const qa = quotes[ka], qb = quotes[kb];
-      const va = sortKey === 'price' ? (qa?.price ?? null) : (qa?.changePct ?? null);
-      const vb = sortKey === 'price' ? (qb?.price ?? null) : (qb?.changePct ?? null);
-      if (va == null && vb == null) return 0;
-      if (va == null) return 1; if (vb == null) return -1;
-      return sortDir === 'desc' ? vb - va : va - vb;
-    });
-  }, [watchlist, sortKey, sortDir, quotes]);
+  const wlKey = watchlist.join(',');
+  useEffect(() => {
+    const syms = watchlist.map(s => s.replace(/\.SA$/i, ''));
+    if (!syms.length) return;
+    let cancelled = false;
+    const load = async () => {
+      const results = await Promise.allSettled(
+        syms.map(sym => fetch(`/api/perf/${sym}`).then(r => r.json()).catch(() => null))
+      );
+      if (cancelled) return;
+      const map: Record<string, PerfRow> = {};
+      results.forEach((r, i) => {
+        const d = r.status === 'fulfilled' ? r.value : null;
+        if (d && typeof d === 'object') map[syms[i]] = d as PerfRow;
+      });
+      setPerfMap(map);
+    };
+    load();
+    const id = setInterval(load, 5 * 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wlKey]);
 
   useEffect(() => {
     if (adding) setTimeout(() => inputRef.current?.focus(), 0);
@@ -125,34 +245,76 @@ function WatchlistPanel() {
     const sym = input.trim().toUpperCase();
     if (!sym) { cancelAdd(); return; }
     if (watchlist.includes(sym)) { setAddErr(`"${sym}" já está na watchlist`); return; }
-    setValidating(true);
-    setAddErr(null);
+    setValidating(true); setAddErr(null);
     try {
       const r = await fetch(`/api/quote/${sym}`);
       const d = await r.json();
       if (r.ok && !d.error && d.regularMarketPrice != null) {
-        addToWatchlist(sym);
-        setInput('');
-        setAdding(false);
-      } else {
-        setAddErr(`"${sym}" não encontrado`);
-      }
-    } catch {
-      setAddErr('Erro de conexão');
-    } finally {
-      setValidating(false);
-    }
+        addToWatchlist(sym); setInput(''); setAdding(false);
+      } else { setAddErr(`"${sym}" não encontrado`); }
+    } catch { setAddErr('Erro de conexão'); }
+    finally  { setValidating(false); }
   };
+
+  const sortFn = useCallback((a: string, b: string): number => {
+    if (!sortKey) return 0;
+    const ka = a.replace(/\.SA$/i, '');
+    const kb = b.replace(/\.SA$/i, '');
+    if (sortKey === 'ticker') {
+      const r = ka.localeCompare(kb);
+      return sortDir === 'desc' ? -r : r;
+    }
+    let va: number | null = null;
+    let vb: number | null = null;
+    if (sortKey === 'price') {
+      va = quotes[ka]?.price ?? null;
+      vb = quotes[kb]?.price ?? null;
+    } else if (sortKey === 'day') {
+      va = quotes[ka]?.changePct ?? null;
+      vb = quotes[kb]?.changePct ?? null;
+    } else {
+      const field = sortKey === 'week' ? 'varWeek' : sortKey === 'month' ? 'varMonth' : 'varYTD';
+      va = perfMap[ka]?.[field] ?? null;
+      vb = perfMap[kb]?.[field] ?? null;
+    }
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1; if (vb == null) return -1;
+    return sortDir === 'desc' ? vb - va : va - vb;
+  }, [sortKey, sortDir, quotes, perfMap]);
+
+  const { groupedItems, others } = useMemo(() => {
+    const wlSet = new Set(watchlist.map(s => s.toUpperCase()));
+    const seen  = new Set<string>();
+    const groupedItems = GROUPS
+      .map(g => ({ label: g.label, symbols: g.symbols.filter(s => wlSet.has(s)) }))
+      .filter(g => g.symbols.length > 0);
+    groupedItems.forEach(g => g.symbols.forEach(s => seen.add(s)));
+    const others = watchlist.filter(s => !seen.has(s.toUpperCase()));
+    return { groupedItems, others };
+  }, [watchlist]);
+
+  const sortedGroups = useMemo(
+    () => groupedItems.map(g => ({ ...g, symbols: [...g.symbols].sort(sortFn) })),
+    [groupedItems, sortFn]
+  );
+  const sortedOthers = useMemo(() => [...others].sort(sortFn), [others, sortFn]);
+
+  const COLS: [WLSortKey, string, boolean][] = [
+    ['ticker', 'TICKER', false],
+    ['price',  'PREÇO',  true],
+    ['day',    'DIA%',   true],
+    ['week',   'SEM%',   true],
+    ['month',  'MÊS%',   true],
+    ['ytd',    'YTD%',   true],
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
       {adding && (
         <div style={{
-          padding: '5px 10px',
-          borderBottom: '1px solid #1a2535',
-          background: '#060b12',
-          flexShrink: 0,
+          padding: '5px 10px', borderBottom: '1px solid #1a2535',
+          background: '#060b12', flexShrink: 0,
         }}>
           <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
             <input
@@ -169,15 +331,9 @@ function WatchlistPanel() {
               disabled={validating}
               placeholder="TICKER..."
               style={{
-                background: '#080c14',
-                border: '1px solid #1a2535',
-                color: '#d4dce8',
-                fontSize: 11,
-                padding: '2px 6px',
-                fontFamily: 'inherit',
-                width: 80,
-                outline: 'none',
-                borderRadius: 2,
+                background: '#080c14', border: '1px solid #1a2535',
+                color: '#d4dce8', fontSize: 11, padding: '2px 6px',
+                fontFamily: 'inherit', width: 80, outline: 'none', borderRadius: 2,
               }}
             />
             {validating ? (
@@ -206,29 +362,23 @@ function WatchlistPanel() {
 
       {/* Column headers */}
       <div style={{
-        display: 'grid', gridTemplateColumns: COMPACT_GRID,
-        gap: 2, padding: '3px 10px',
-        borderBottom: '1px solid #1a2535',
-        fontSize: 8, letterSpacing: 0.8, flexShrink: 0,
+        display: 'grid', gridTemplateColumns: WL_GRID,
+        gap: 2, padding: '3px 10px', borderBottom: '1px solid #1a2535',
+        fontSize: 8, letterSpacing: 0.8, flexShrink: 0, alignItems: 'center',
       }}>
-        <span
-          onClick={() => handleSort('ticker')}
-          onMouseEnter={() => setHoverCol('ticker')}
-          onMouseLeave={() => setHoverCol(null)}
-          style={{ cursor: 'pointer', userSelect: 'none', color: sortKey === 'ticker' ? '#f7941d' : hoverCol === 'ticker' ? '#c8d4e0' : '#8ba4bc' }}
-        >TICKER{sortKey === 'ticker' ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}</span>
-        <span
-          onClick={() => handleSort('price')}
-          onMouseEnter={() => setHoverCol('price')}
-          onMouseLeave={() => setHoverCol(null)}
-          style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none', color: sortKey === 'price' ? '#f7941d' : hoverCol === 'price' ? '#c8d4e0' : '#8ba4bc' }}
-        >PREÇO{sortKey === 'price' ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}</span>
-        <span
-          onClick={() => handleSort('day')}
-          onMouseEnter={() => setHoverCol('day')}
-          onMouseLeave={() => setHoverCol(null)}
-          style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none', color: sortKey === 'day' ? '#f7941d' : hoverCol === 'day' ? '#c8d4e0' : '#8ba4bc' }}
-        >DIA%{sortKey === 'day' ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}</span>
+        {COLS.map(([col, label, right]) => (
+          <span
+            key={col}
+            onClick={() => handleSort(col)}
+            onMouseEnter={() => setHoverCol(col)}
+            onMouseLeave={() => setHoverCol(null)}
+            style={{
+              textAlign: right ? 'right' : 'left',
+              cursor: 'pointer', userSelect: 'none',
+              color: sortKey === col ? '#f7941d' : hoverCol === col ? '#c8d4e0' : '#8ba4bc',
+            }}
+          >{label}{sortKey === col ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}</span>
+        ))}
         <button
           onClick={() => setAdding((v) => !v)}
           title="Adicionar ticker"
@@ -244,48 +394,35 @@ function WatchlistPanel() {
 
       {/* Rows */}
       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '0 10px' }}>
-        {sortedList.map((sym) => {
-          const key = sym.replace(/\.SA$/i, '');
-          const q   = quotes[key];
-          const pct = q?.changePct ?? null;
 
-          return (
-            <div
-              key={sym}
-              className="row"
-              style={{
-                display: 'grid', gridTemplateColumns: COMPACT_GRID,
-                gap: 2, height: 20,
-                borderBottom: '1px solid #1a2535',
-                fontSize: 10, alignItems: 'center',
-              }}
-            >
-              <span
-                onClick={() => runCommand(`${key} GP`)}
-                title={`Abrir gráfico de ${key}`}
-                style={{ color: '#f7941d', fontWeight: 600, fontSize: 10, cursor: 'pointer' }}
-              >{key}</span>
-              <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#d4dce8', fontSize: 10 }}>
-                {q ? n(q.price) : '—'}
-              </span>
-              <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, fontWeight: 600, ...pctStyle(pct) }}>
-                {q && pct != null ? fmtPct(pct) : '—'}
-              </span>
-              <button
-                onClick={() => removeFromWatchlist(sym)}
-                title={`Remover ${key}`}
-                style={{
-                  background: 'none', border: 'none', color: '#3a556a',
-                  fontSize: 13, cursor: 'pointer', lineHeight: 1,
-                  padding: 0, fontFamily: 'inherit', textAlign: 'center',
-                  transition: 'color 0.1s',
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ff3b5c'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#3a556a'; }}
-              >×</button>
-            </div>
-          );
-        })}
+        {/* Ungrouped (user-added stocks not in any group) */}
+        {sortedOthers.length > 0 && (
+          <>
+            {sortedOthers.map(sym => (
+              <StockRow
+                key={sym} sym={sym} quotes={quotes}
+                perfRow={perfMap[sym.replace(/\.SA$/i, '')]}
+                runCommand={runCommand} removeFromWatchlist={removeFromWatchlist}
+              />
+            ))}
+            <AvgRow syms={sortedOthers} quotes={quotes} perfMap={perfMap} />
+          </>
+        )}
+
+        {/* Predefined groups */}
+        {sortedGroups.map(g => (
+          <div key={g.label}>
+            <GroupSeparator label={g.label} />
+            {g.symbols.map(sym => (
+              <StockRow
+                key={sym} sym={sym} quotes={quotes}
+                perfRow={perfMap[sym.replace(/\.SA$/i, '')]}
+                runCommand={runCommand} removeFromWatchlist={removeFromWatchlist}
+              />
+            ))}
+            <AvgRow syms={g.symbols} quotes={quotes} perfMap={perfMap} />
+          </div>
+        ))}
 
         {watchlist.length === 0 && (
           <div style={{ padding: '10px 0', color: '#3a556a', fontSize: 10 }}>
@@ -350,8 +487,7 @@ export default function QuotePanel({ panel }: { panel: Panel }) {
             fontSize: 13,
             color: pos ? '#00c076' : '#ff3b5c',
             background: pos ? 'rgba(0,192,118,0.09)' : 'rgba(255,59,92,0.09)',
-            borderRadius: 3,
-            padding: '1px 5px',
+            borderRadius: 3, padding: '1px 5px',
           }}>
             {pos ? '+' : ''}{n(chg)} ({pos ? '+' : ''}{n(chgPct)}%)
           </span>

@@ -44,7 +44,7 @@ export const useTerminal = create<TerminalStore>()(
       activeSymbol:   'PETR4',
       commandHistory: [],
       historyIndex:   -1,
-      watchlist:      ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'B3SA3'],
+      watchlist:      ['CYRE3','EZTC3','EVEN3','TRIS3','LAVV3','JHSF3','MTRE3','MELK3','MDNE3','GFSA3','MRVE3','DIRR3','PLPL3','CURY3','TEND3','MULT3','IGTI11','ALOS3'],
 
       openPanel: (panel) => {
         // Commands for permanently-visible panels are silently ignored
