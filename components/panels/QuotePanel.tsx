@@ -259,9 +259,10 @@ function WatchlistPanel() {
     if (watchlist.includes(sym)) { setAddErr(`"${sym}" já está na watchlist`); return; }
     setValidating(true); setAddErr(null);
     try {
-      const r = await fetch(`/api/quote/${sym}`);
+      // Use /api/quotes which has Brapi + Yahoo Finance fallback (handles FIIs like XPML11)
+      const r = await fetch(`/api/quotes?symbols=${sym}`);
       const d = await r.json();
-      if (r.ok && !d.error && d.regularMarketPrice != null) {
+      if (r.ok && d[sym]?.price != null) {
         setPendingSym(sym);
       } else {
         setAddErr(`"${sym}" não encontrado`);

@@ -4,11 +4,15 @@ import { XMLParser } from 'fast-xml-parser';
 export const dynamic = 'force-dynamic';
 
 const FEEDS = [
-  { url: 'https://www.infomoney.com.br/feed/',      source: 'InfoMoney' },
-  { url: 'https://exame.com/feed/',                 source: 'Exame' },
-  { url: 'https://g1.globo.com/rss/g1/economia/',  source: 'G1' },
-  { url: 'https://www.cnnbrasil.com.br/feed/',      source: 'CNN Brasil' },
-  { url: 'https://metropoles.com/feed/',            source: 'Metrópoles' },
+  { url: 'https://www.infomoney.com.br/feed/',          source: 'InfoMoney'      },
+  { url: 'https://exame.com/feed/',                     source: 'Exame'          },
+  { url: 'https://g1.globo.com/rss/g1/economia/',       source: 'G1'             },
+  { url: 'https://www.cnnbrasil.com.br/feed/',          source: 'CNN Brasil'     },
+  { url: 'https://metropoles.com/feed/',                source: 'Metrópoles'     },
+  { url: 'https://braziljournal.com/feed/',             source: 'Brazil Journal' },
+  { url: 'https://neofeed.com.br/feed/',                source: 'NeoFeed'        },
+  { url: 'https://metroquadrado.com.br/noticias/feed/', source: 'Metro Quadrado' },
+  { url: 'https://valor.globo.com/rss/financas',        source: 'Valor Econômico'},
 ];
 
 interface NewsItem {
@@ -121,5 +125,5 @@ export async function GET() {
 
   allItems.sort((a, b) => b.providerPublishTime - a.providerPublishTime);
 
-  return NextResponse.json(allItems.slice(0, 40));
+  return NextResponse.json(allItems.slice(0, 60));
 }
