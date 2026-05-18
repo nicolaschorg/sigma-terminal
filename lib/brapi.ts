@@ -47,9 +47,21 @@ export async function fetchQuotes(symbols: string[]): Promise<BrapiQuote[]> {
 }
 
 export async function fetchQuote(symbol: string): Promise<BrapiQuote> {
-  const results = await fetchQuotes([symbol]);
-  if (!results[0]) throw new Error(`Brapi: sem dados para ${symbol}`);
-  return results[0];
+  // Fallback sequence for FIIs: exact → +.SA → base (remove last 2 chars) + 11.SA
+  const candidates = [
+    symbol,
+    `${symbol}.SA`,
+    `${symbol.slice(0, -2)}11.SA`,
+  ].filter((c, i, arr) => arr.indexOf(c) === i);
+
+  for (const sym of candidates) {
+    try {
+      const data = await get(`${BASE}/quote/${sym}?token=${tok()}`);
+      const result = data.results?.[0];
+      if (result?.regularMarketPrice != null) return result;
+    } catch { /* try next candidate */ }
+  }
+  throw new Error(`Brapi: sem dados para ${symbol}`);
 }
 
 export async function fetchQuoteWithModules(symbol: string, modules: string): Promise<BrapiQuote> {

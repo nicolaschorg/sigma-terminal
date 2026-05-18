@@ -201,18 +201,15 @@ function WatchlistPanel() {
   const quotes = useMarketData(s => s.quotes);
   useMarketSymbols(watchlist);
 
-  const [adding,       setAdding]       = useState(false);
-  const [input,        setInput]        = useState('');
-  const [addErr,       setAddErr]       = useState<string | null>(null);
-  const [validating,   setValidating]   = useState(false);
-  const [validatedSym, setValidatedSym] = useState<string | null>(null);
-  const [creatingGrp,  setCreatingGrp]  = useState(false);
-  const [newGrpInput,  setNewGrpInput]  = useState('');
-  const [deleteGrpId,  setDeleteGrpId]  = useState<string | null>(null);
-  const [perfMap,      setPerfMap]      = useState<Record<string, PerfRow>>({});
+  const [adding,     setAdding]     = useState(false);
+  const [input,      setInput]      = useState('');
+  const [addErr,     setAddErr]     = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
+  const [pendingSym, setPendingSym] = useState<string | null>(null);
+  const [deleteGrpId, setDeleteGrpId] = useState<string | null>(null);
+  const [perfMap,    setPerfMap]    = useState<Record<string, PerfRow>>({});
 
-  const inputRef  = useRef<HTMLInputElement>(null);
-  const newGrpRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   type WLSortKey = 'ticker' | 'price' | 'day' | 'week' | 'month' | 'ytd';
   const [sortKey,  setSortKey]  = useState<WLSortKey | null>(null);
@@ -248,17 +245,12 @@ function WatchlistPanel() {
   }, [wlKey]);
 
   useEffect(() => {
-    if (adding && !validatedSym) setTimeout(() => inputRef.current?.focus(), 0);
-  }, [adding, validatedSym]);
-
-  useEffect(() => {
-    if (creatingGrp) setTimeout(() => newGrpRef.current?.focus(), 0);
-  }, [creatingGrp]);
+    if (adding && !pendingSym) setTimeout(() => inputRef.current?.focus(), 0);
+  }, [adding, pendingSym]);
 
   // ── add ticker flow ────────────────────────────────────────────────────────
   const cancelAdd = () => {
-    setAdding(false); setInput(''); setAddErr(null);
-    setValidatedSym(null); setCreatingGrp(false); setNewGrpInput('');
+    setAdding(false); setInput(''); setAddErr(null); setPendingSym(null);
   };
 
   const validateAndShowPicker = async () => {
@@ -270,7 +262,7 @@ function WatchlistPanel() {
       const r = await fetch(`/api/quote/${sym}`);
       const d = await r.json();
       if (r.ok && !d.error && d.regularMarketPrice != null) {
-        setValidatedSym(sym);
+        setPendingSym(sym);
       } else {
         setAddErr(`"${sym}" não encontrado`);
       }
@@ -278,25 +270,18 @@ function WatchlistPanel() {
     finally  { setValidating(false); }
   };
 
-  const handleGroupSelect = (groupId: string) => {
-    if (!validatedSym) return;
-    addToWatchlist(validatedSym);
-    addToGroup(validatedSym, groupId);
+  const commitAdd = (sym: string, groupId: string | null) => {
+    addToWatchlist(sym);
+    if (groupId) addToGroup(sym, groupId);
     cancelAdd();
   };
 
-  const handleAddUngrouped = () => {
-    if (!validatedSym) return;
-    addToWatchlist(validatedSym);
-    cancelAdd();
-  };
-
-  const handleCreateGroup = () => {
-    const label = newGrpInput.trim();
-    if (!label || !validatedSym) return;
+  const handleNewGroup = (sym: string) => {
+    const label = window.prompt('Nome do novo grupo:')?.trim();
+    if (!label) return;
     const id = addGroup(label);
-    addToWatchlist(validatedSym);
-    addToGroup(validatedSym, id);
+    addToWatchlist(sym);
+    addToGroup(sym, id);
     cancelAdd();
   };
 
@@ -504,85 +489,68 @@ function WatchlistPanel() {
         </div>
       )}
 
-      {/* Ticker input */}
-      {adding && !validatedSym && (
+      {/* Add ticker + group picker — single unified block */}
+      {adding && (
         <div style={{ padding: '5px 10px', borderBottom: '1px solid #1a2535', background: '#060b12', flexShrink: 0 }}>
-          <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-            <input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => { setInput(e.target.value.toUpperCase()); setAddErr(null); }}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                if (e.key === 'Enter')  { e.preventDefault(); validateAndShowPicker(); }
-                if (e.key === 'Escape') cancelAdd();
-              }}
-              onKeyUp={(e) => e.stopPropagation()}
-              onKeyPress={(e) => e.stopPropagation()}
-              disabled={validating}
-              placeholder="TICKER..."
-              style={{ background: '#080c14', border: '1px solid #1a2535', color: '#d4dce8', fontSize: 11, padding: '2px 6px', fontFamily: 'inherit', width: 80, outline: 'none', borderRadius: 2 }}
-            />
-            {validating ? (
-              <span style={{ color: '#f7941d', fontSize: 10 }}>verificando…</span>
-            ) : (
-              <button onClick={validateAndShowPicker} style={{ background: '#f7941d', border: 'none', color: '#080c14', fontSize: 10, padding: '2px 6px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, borderRadius: 2 }}>OK</button>
-            )}
-            <button onClick={cancelAdd} style={{ background: 'none', border: 'none', color: '#3a556a', fontSize: 14, cursor: 'pointer', lineHeight: 1, padding: 0 }}>×</button>
-          </div>
-          {addErr && <div style={{ color: '#ff3b5c', fontSize: 10, marginTop: 2 }}>{addErr}</div>}
-        </div>
-      )}
-
-      {/* Group picker */}
-      {validatedSym && (
-        <div style={{ padding: '6px 10px', borderBottom: '1px solid #1a2535', background: '#060b12', flexShrink: 0 }}>
-          <div style={{ fontSize: 10, color: '#8ba4bc', marginBottom: 5 }}>
-            <span style={{ color: '#f7941d', fontWeight: 700 }}>{validatedSym}</span>
-            {' '}— adicionar a qual grupo?
-          </div>
-          {groups.map(g => (
-            <button key={g.id} onClick={() => handleGroupSelect(g.id)}
-              style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#d4dce8', fontSize: 10, padding: '3px 0', cursor: 'pointer', fontFamily: 'inherit' }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#f7941d'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#d4dce8'; }}
-            >▸ {g.label}</button>
-          ))}
-          <div style={{ borderTop: '1px solid #1a2535', marginTop: 4, paddingTop: 4 }}>
-            {!creatingGrp ? (
-              <>
-                <button onClick={() => setCreatingGrp(true)}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#5a7a9a', fontSize: 10, padding: '3px 0', cursor: 'pointer', fontFamily: 'inherit' }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#f7941d'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#5a7a9a'; }}
-                >+ Criar novo grupo...</button>
-                <button onClick={handleAddUngrouped}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#5a7a9a', fontSize: 10, padding: '3px 0', cursor: 'pointer', fontFamily: 'inherit' }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#d4dce8'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#5a7a9a'; }}
-                >Sem grupo</button>
-              </>
-            ) : (
+          {!pendingSym ? (
+            /* Phase 1 — ticker input */
+            <>
               <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
                 <input
-                  ref={newGrpRef}
-                  value={newGrpInput}
-                  onChange={(e) => setNewGrpInput(e.target.value)}
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => { setInput(e.target.value.toUpperCase()); setAddErr(null); }}
                   onKeyDown={(e) => {
                     e.stopPropagation();
-                    if (e.key === 'Enter')  handleCreateGroup();
-                    if (e.key === 'Escape') setCreatingGrp(false);
+                    if (e.key === 'Enter')  { e.preventDefault(); validateAndShowPicker(); }
+                    if (e.key === 'Escape') cancelAdd();
                   }}
                   onKeyUp={(e) => e.stopPropagation()}
                   onKeyPress={(e) => e.stopPropagation()}
-                  placeholder="Nome do grupo..."
-                  style={{ background: '#080c14', border: '1px solid #1a2535', color: '#d4dce8', fontSize: 10, padding: '2px 6px', fontFamily: 'inherit', flex: 1, outline: 'none', borderRadius: 2 }}
+                  disabled={validating}
+                  placeholder="TICKER..."
+                  style={{ background: '#080c14', border: '1px solid #1a2535', color: '#d4dce8', fontSize: 11, padding: '2px 6px', fontFamily: 'inherit', width: 80, outline: 'none', borderRadius: 2 }}
                 />
-                <button onClick={handleCreateGroup} style={{ background: '#f7941d', border: 'none', color: '#080c14', fontSize: 10, padding: '2px 6px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, borderRadius: 2 }}>OK</button>
+                {validating ? (
+                  <span style={{ color: '#f7941d', fontSize: 10 }}>verificando…</span>
+                ) : (
+                  <button onClick={validateAndShowPicker} style={{ background: '#f7941d', border: 'none', color: '#080c14', fontSize: 10, padding: '2px 6px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, borderRadius: 2 }}>OK</button>
+                )}
+                <button onClick={cancelAdd} style={{ background: 'none', border: 'none', color: '#3a556a', fontSize: 14, cursor: 'pointer', lineHeight: 1, padding: 0 }}>×</button>
               </div>
-            )}
-          </div>
-          <button onClick={cancelAdd} style={{ marginTop: 4, background: 'none', border: 'none', color: '#3a556a', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>cancelar</button>
+              {addErr && <div style={{ color: '#ff3b5c', fontSize: 10, marginTop: 2 }}>{addErr}</div>}
+            </>
+          ) : (
+            /* Phase 2 — group picker (inline, no extra state) */
+            <>
+              <div style={{ fontSize: 10, color: '#8ba4bc', marginBottom: 5 }}>
+                <span style={{ color: '#f7941d', fontWeight: 700 }}>{pendingSym}</span>
+                {' '}— adicionar a:
+              </div>
+              {groups.map(g => (
+                <button key={g.id} onClick={() => commitAdd(pendingSym, g.id)}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#c8d4e0', fontSize: 10, padding: '3px 0', cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1.6 }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#f7941d'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#c8d4e0'; }}
+                >▸ {g.label}</button>
+              ))}
+              <div style={{ borderTop: '1px solid #1a2535', marginTop: 4, paddingTop: 4, display: 'flex', gap: 10 }}>
+                <button onClick={() => handleNewGroup(pendingSym)}
+                  style={{ background: 'none', border: 'none', color: '#5a7a9a', fontSize: 10, padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#f7941d'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#5a7a9a'; }}
+                >➕ Novo grupo</button>
+                <button onClick={() => commitAdd(pendingSym, null)}
+                  style={{ background: 'none', border: 'none', color: '#5a7a9a', fontSize: 10, padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#c8d4e0'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#5a7a9a'; }}
+                >Sem grupo</button>
+                <button onClick={cancelAdd}
+                  style={{ background: 'none', border: 'none', color: '#3a556a', fontSize: 10, padding: 0, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 'auto' }}
+                >cancelar</button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
