@@ -23,12 +23,28 @@ type HistField = 'varWeek' | 'varMonth' | 'varYTD';
 interface EditCell { symbol: string; field: HistField }
 
 const TABS = [
-  { key: 'ibov', label: 'IBOV' },
-  { key: 'ifix', label: 'IFIX' },
-  { key: 'idiv', label: 'IDIV' },
-  { key: 'smll', label: 'SMLL' },
+  { key: 'ibov',     label: 'IBOV'  },
+  { key: 'ifix',     label: 'IFIX'  },
+  { key: 'idiv',     label: 'IDIV'  },
+  { key: 'smll',     label: 'SMLL'  },
+  { key: 'offshore', label: 'NILUS' },
 ] as const;
 type Tab = typeof TABS[number]['key'];
+
+const OFFSHORE_GROUPS = [
+  { label: 'Multifamily US', symbols: ['IRT','ELME','NXRT','CLPR','EQR','AVB','MAA'] },
+  { label: 'Multifamily EU', symbols: ['GYC','GRI.L','VARN.SW','INPR.MC','IVST.L','LEG.DE','TAG.DE'] },
+  { label: 'Retail US',      symbols: ['CBL','SPG','O','NNN'] },
+  { label: 'Retail EU',      symbols: ['URW.AS','LI.PA','CARM.PA','VASTN.AS','WHL.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA','MFI.DE'] },
+  { label: 'Office US',      symbols: ['DEI','JBGS','ESRT','CTO','BXP'] },
+  { label: 'Office EU',      symbols: ['ICAD.PA','GPE.L','LAND.L','BLND.L'] },
+  { label: 'Hotel US',       symbols: ['DRH','PK','RLJ','SHO','HST'] },
+  { label: 'Hotel EU',       symbols: ['PPH.L','MEL.MC'] },
+  { label: 'Industrial EU',  symbols: ['MONT.BR','VGP.BR','WDP.BR','SEGRO.L','ARGAN.PA'] },
+  { label: 'Diversificado EU', symbols: ['COL.MC','BRI.MI','KLPI.HE'] },
+  { label: 'Farmland US',    symbols: ['FPI','LAND'] },
+  { label: 'Industrial/Infra US', symbols: ['PLD','AMT'] },
+] as const;
 
 const OVERRIDE_KEY = 'sigma-idx-overrides';
 
@@ -161,18 +177,20 @@ export default function IndicesPanel({ panel: _panel }: { panel: Panel }) {
     const loadPrices = async () => {
       setLoading(true); setError(null);
       try {
-        // Fetch live B3 composition to get current index members (top 25 by weight)
         let url = `/api/indices?tab=${tab}`;
-        try {
-          const compR = await fetch(`/api/index-composition/${tab.toUpperCase()}`);
-          if (compR.ok) {
-            const comp: { code: string; part: number }[] = await compR.json();
-            if (Array.isArray(comp) && comp.length) {
-              const syms = comp.slice(0, 25).map(c => c.code).join(',');
-              url = `/api/indices?symbols=${encodeURIComponent(syms)}`;
+        if (tab !== 'offshore') {
+          // Fetch live B3 composition to get current index members (top 25 by weight)
+          try {
+            const compR = await fetch(`/api/index-composition/${tab.toUpperCase()}`);
+            if (compR.ok) {
+              const comp: { code: string; part: number }[] = await compR.json();
+              if (Array.isArray(comp) && comp.length) {
+                const syms = comp.slice(0, 25).map(c => c.code).join(',');
+                url = `/api/indices?symbols=${encodeURIComponent(syms)}`;
+              }
             }
-          }
-        } catch { /* fall back to tab-based hardcoded list */ }
+          } catch { /* fall back to tab-based hardcoded list */ }
+        }
 
         const r    = await fetch(url);
         const data = await r.json();
@@ -238,6 +256,8 @@ export default function IndicesPanel({ panel: _panel }: { panel: Panel }) {
     setEditCell({ symbol: sym, field });
     setEditVal(currentVal != null ? currentVal.toFixed(2) : '');
   };
+
+  const stocksMap = useMemo(() => new Map(stocks.map(s => [s.symbol, s])), [stocks]);
 
   const sortedStocks = useMemo(() => {
     if (!sortKey) return stocks;
@@ -313,7 +333,79 @@ export default function IndicesPanel({ panel: _panel }: { panel: Panel }) {
         {!loading && error && (
           <div style={{ padding: 14, color: '#ff3b5c', fontSize: 11 }}>{error}</div>
         )}
-        {!loading && !error && (
+        {!loading && !error && tab === 'offshore' && (
+          <div style={{ padding: '0 12px' }}>
+            {/* Offshore column header */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '80px 68px 52px 52px 52px 52px',
+              gap: 4, padding: '4px 0',
+              borderBottom: '1px solid #1a2535',
+              fontSize: 8, letterSpacing: 0.8,
+              color: '#8ba4bc',
+            }}>
+              <span>TICKER</span>
+              <span style={{ textAlign: 'right' }}>PREÇO</span>
+              <span style={{ textAlign: 'right' }}>DIA%</span>
+              <span style={{ textAlign: 'right' }}>SEM%</span>
+              <span style={{ textAlign: 'right' }}>MÊS%</span>
+              <span style={{ textAlign: 'right' }}>YTD%</span>
+            </div>
+            {OFFSHORE_GROUPS.map((grp) => (
+              <div key={grp.label}>
+                <div style={{
+                  fontSize: 8, letterSpacing: 0.7, color: '#3a556a',
+                  padding: '6px 0 2px',
+                  borderBottom: '1px solid #141e2c',
+                  textTransform: 'uppercase',
+                }}>
+                  {grp.label}
+                </div>
+                {grp.symbols.map((sym) => {
+                  const s = stocksMap.get(sym);
+                  const h = s ?? { symbol: sym, price: null, varDay: null, varWeek: null, varMonth: null, varYTD: null };
+                  return (
+                    <div
+                      key={sym}
+                      className="row"
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '80px 68px 52px 52px 52px 52px',
+                        gap: 4, padding: '3px 0',
+                        borderBottom: '1px solid #0e1620',
+                        fontSize: 10, alignItems: 'center',
+                      }}
+                    >
+                      <span style={{ color: '#f7941d', fontWeight: 600, fontSize: 9 }}>{sym}</span>
+                      <span style={{
+                        textAlign: 'right', color: '#d4dce8',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}>{fmtPrice(h.price)}</span>
+                      <span style={{
+                        textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                        ...pctStyle(h.varDay),
+                      }}>{fmtPct(h.varDay)}</span>
+                      <span style={{
+                        textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                        ...pctStyle(h.varWeek),
+                      }}>{fmtPct(h.varWeek)}</span>
+                      <span style={{
+                        textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                        ...pctStyle(h.varMonth),
+                      }}>{fmtPct(h.varMonth)}</span>
+                      <span style={{
+                        textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                        ...pctStyle(h.varYTD),
+                      }}>{fmtPct(h.varYTD)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!loading && !error && tab !== 'offshore' && (
           <div style={{ padding: '0 12px' }}>
             {/* Column header */}
             <div style={{

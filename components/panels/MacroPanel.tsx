@@ -9,9 +9,19 @@ interface ExchangeRow {
   changePct: number | null;
 }
 
+interface Snapshot {
+  price:     number | null;
+  change:    number | null;
+  changePct: number | null;
+}
+
 interface MacroData {
   exchange:  ExchangeRow[];
   rates:     { selic: number | null; cdi: number | null; ipca12m: number | null };
+  jurosUS?:  { fedFunds: number; tbill3m: Snapshot; tbond10y: Snapshot };
+  jurosEU?:  { ecb: number; bund2y: Snapshot; bund10y: Snapshot };
+  reits?:    Array<{ label: string } & Snapshot>;
+  euIndices?: Array<{ label: string } & Snapshot>;
   updatedAt: string;
 }
 
@@ -75,6 +85,61 @@ function RateLine({ label, value }: { label: string; value: string }) {
   );
 }
 
+// Bond yield line: label | yield% | ±bps change
+function YieldLine({ label, snap, isPolicy }: { label: string; snap?: Snapshot; isPolicy?: boolean }) {
+  const rate = snap?.price;
+  // Yahoo bond yields: change is in points (e.g. -0.03 = -3bps), bps = change * 100
+  const bps  = snap?.change != null ? Math.round(snap.change * 100) : null;
+  const pos  = (bps ?? 0) >= 0;
+  const color = isPolicy ? '#f7941d' : (bps == null ? '#5a7a9a' : pos ? '#00c076' : '#ff3b5c');
+
+  return (
+    <div className="row" style={{
+      display: 'grid', gridTemplateColumns: '100px 1fr auto',
+      gap: 8, padding: '4px 0', borderBottom: '1px solid #1a2535',
+      alignItems: 'center', fontSize: 11,
+    }}>
+      <span style={{ color: '#5a7a9a', fontSize: 10 }}>{label}</span>
+      <span style={{ color: isPolicy ? '#f7941d' : '#d4dce8', fontVariantNumeric: 'tabular-nums', fontWeight: isPolicy ? 600 : 400 }}>
+        {rate == null ? 'N/A' : `${rate.toFixed(2)}%`}
+      </span>
+      <span style={{
+        color, fontSize: 9, fontVariantNumeric: 'tabular-nums',
+        minWidth: 44, textAlign: 'right',
+      }}>
+        {bps == null ? '' : `${bps >= 0 ? '+' : ''}${bps}bps`}
+      </span>
+    </div>
+  );
+}
+
+// Index/price line: label | price | changePct%
+function IndexLine({ label, snap }: { label: string; snap?: Snapshot }) {
+  const pos   = (snap?.changePct ?? 0) >= 0;
+  const color = snap?.changePct == null ? '#5a7a9a' : pos ? '#00c076' : '#ff3b5c';
+  const pctBg = snap?.changePct == null ? 'transparent' : pos ? 'rgba(0,192,118,0.09)' : 'rgba(255,59,92,0.09)';
+
+  return (
+    <div className="row" style={{
+      display: 'grid', gridTemplateColumns: '72px 1fr auto',
+      gap: 8, padding: '4px 0', borderBottom: '1px solid #1a2535',
+      alignItems: 'center', fontSize: 11,
+    }}>
+      <span style={{ color: '#5a7a9a', fontSize: 10 }}>{label}</span>
+      <span style={{ color: '#d4dce8', fontVariantNumeric: 'tabular-nums' }}>
+        {snap?.price == null ? 'N/A' : fmtPrice(snap.price, 0)}
+      </span>
+      <span style={{
+        color, fontSize: 10, fontWeight: 600,
+        background: pctBg, borderRadius: 2, padding: '1px 4px',
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {snap?.changePct == null ? '' : `${pos ? '+' : ''}${snap.changePct.toFixed(2)}%`}
+      </span>
+    </div>
+  );
+}
+
 export default function MacroPanel({ panel }: { panel: Panel }) {
   const [data,    setData]    = useState<MacroData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -115,10 +180,46 @@ export default function MacroPanel({ panel }: { panel: Panel }) {
         <ExchangeLine key={row.label} row={row} />
       ))}
 
-      <SectionTitle label="Juros & Inflação" />
+      <SectionTitle label="Juros Brasil" />
       <RateLine label="SELIC META" value={fmtRate(data.rates.selic)} />
       <RateLine label="CDI"        value={fmtRate(data.rates.cdi)} />
       <RateLine label="IPCA"       value={fmtIpca(data.rates.ipca12m)} />
+
+      {data.jurosUS && (
+        <>
+          <SectionTitle label="Juros EUA" />
+          <YieldLine label="Fed Funds"  snap={{ price: data.jurosUS.fedFunds, change: null, changePct: null }} isPolicy />
+          <YieldLine label="T-Bill 3M"  snap={data.jurosUS.tbill3m} />
+          <YieldLine label="T-Bond 10Y" snap={data.jurosUS.tbond10y} />
+        </>
+      )}
+
+      {data.jurosEU && (
+        <>
+          <SectionTitle label="Juros Europa" />
+          <YieldLine label="BCE"        snap={{ price: data.jurosEU.ecb, change: null, changePct: null }} isPolicy />
+          <YieldLine label="Bund 2Y"    snap={data.jurosEU.bund2y} />
+          <YieldLine label="Bund 10Y"   snap={data.jurosEU.bund10y} />
+        </>
+      )}
+
+      {data.reits && data.reits.length > 0 && (
+        <>
+          <SectionTitle label="REITs" />
+          {data.reits.map((r) => (
+            <IndexLine key={r.label} label={r.label} snap={r} />
+          ))}
+        </>
+      )}
+
+      {data.euIndices && data.euIndices.length > 0 && (
+        <>
+          <SectionTitle label="Índices Europa" />
+          {data.euIndices.map((r) => (
+            <IndexLine key={r.label} label={r.label} snap={r} />
+          ))}
+        </>
+      )}
 
       <div style={{ marginTop: 12, fontSize: 8, color: '#3a556a', letterSpacing: 0.3 }}>
         Yahoo Finance · BCB{ts && ` · ${ts}`}

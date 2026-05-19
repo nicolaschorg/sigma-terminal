@@ -7,6 +7,33 @@ const COMPONENTS: Record<string, string[]> = {
   ifix: ['MXRF11','HGLG11','KNRI11','XPML11','BCFF11','BRCR11','HGRE11','PVBI11','IRDM11','BRCO11','RBRF11','VGIR11','JSRE11','TGAR11','BTLG11','VILG11','RBVA11','HGBS11','XPLG11','HSML11'],
   idiv: ['TAEE11','CMIG4','TRPL4','EGIE3','CPFE3','ENGI11','SBSP3','VIVT3','BBSE3','CPLE6','ENBR3','KLBN11','CSMG3','SAPR11','AURE3'],
   smll: ['CASH3','DESK3','PRIO3','RECV3','SMFT3','VAMO3','MOVI3','AIOS3','CVCB3','PETZ3','LWSA3','AESB3','TASA4','FRAS3','BMOB3'],
+  // Nilus Offshore — international REITs grouped by sector/region
+  offshore: [
+    // Multifamily US
+    'IRT','ELME','NXRT','CLPR','EQR','AVB','MAA',
+    // Multifamily EU
+    'GYC','GRI.L','VARN.SW','INPR.MC','IVST.L','LEG.DE','TAG.DE',
+    // Retail US
+    'CBL','SPG','O','NNN',
+    // Retail EU
+    'URW.AS','LI.PA','CARM.PA','VASTN.AS','WHL.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA','MFI.DE',
+    // Office US
+    'DEI','JBGS','ESRT','CTO','BXP',
+    // Office EU
+    'ICAD.PA','GPE.L','LAND.L','BLND.L',
+    // Hotel US
+    'DRH','PK','RLJ','SHO','HST',
+    // Hotel EU
+    'PPH.L','MEL.MC',
+    // Industrial EU
+    'MONT.BR','VGP.BR','WDP.BR','SEGRO.L','ARGAN.PA',
+    // Diversificado EU
+    'COL.MC','BRI.MI','KLPI.HE',
+    // Farmland US
+    'FPI','LAND',
+    // Industrial/Infra US
+    'PLD','AMT',
+  ],
 };
 
 // ── Server-side history cache ─────────────────────────────────────────────────
@@ -112,22 +139,48 @@ export async function GET(req: NextRequest) {
     : (COMPONENTS[tab] ?? COMPONENTS.ibov);
   const tok  = process.env.BRAPI_TOKEN ?? '';
 
-  // ── 1. Current prices via segment list (one call, returns ~2000 stocks) ────
+  // ── 1. Current prices ────────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const priceMap: Record<string, { price: number | null; varDay: number | null }> = {};
-  try {
-    const r = await fetch(
-      `https://brapi.dev/api/quote/list?segment=ibovespa&token=${tok}`,
-      { cache: 'no-store', signal: abortAfter(10_000).signal }
-    );
-    if (r.ok) {
-      const data = await r.json();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const s of (data.stocks ?? []) as any[]) {
-        priceMap[s.stock] = { price: s.close ?? null, varDay: s.change ?? null };
+
+  if (tab !== 'offshore') {
+    // Brapi segment list — one call covers ~2000 B3 stocks
+    try {
+      const r = await fetch(
+        `https://brapi.dev/api/quote/list?segment=ibovespa&token=${tok}`,
+        { cache: 'no-store', signal: abortAfter(10_000).signal }
+      );
+      if (r.ok) {
+        const data = await r.json();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const s of (data.stocks ?? []) as any[]) {
+          priceMap[s.stock] = { price: s.close ?? null, varDay: s.change ?? null };
+        }
       }
-    }
-  } catch { /* show N/A for prices */ }
+    } catch { /* show N/A for prices */ }
+  } else {
+    // Yahoo Finance — fetch each offshore ticker in parallel
+    await Promise.allSettled(syms.map(async (sym) => {
+      try {
+        const r = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=2d&interval=1d`,
+          {
+            cache: 'no-store',
+            signal: abortAfter(8_000).signal,
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+          }
+        );
+        if (!r.ok) return;
+        const data = await r.json();
+        const meta = data?.chart?.result?.[0]?.meta;
+        if (!meta?.regularMarketPrice) return;
+        priceMap[sym] = {
+          price:  meta.regularMarketPrice as number,
+          varDay: (meta.regularMarketChangePercent as number) ?? null,
+        };
+      } catch { /* skip */ }
+    }));
+  }
 
   // ── 2. Backfill history cache — all uncached symbols in parallel ────────────
   const uncached = syms.filter(s => {

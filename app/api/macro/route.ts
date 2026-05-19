@@ -2,8 +2,17 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
+const FED_FUNDS_RATE = 4.25;
+const ECB_RATE       = 2.00;
+
 interface ExchangeRow {
   label:     string;
+  price:     number | null;
+  change:    number | null;
+  changePct: number | null;
+}
+
+export interface YahooSnapshot {
   price:     number | null;
   change:    number | null;
   changePct: number | null;
@@ -15,10 +24,47 @@ const YAHOO_FX = [
   { symbol: 'GBPBRL=X', label: 'GBP/BRL' },
 ];
 
+const EU_INDICES = [
+  { symbol: '^GDAXI', label: 'DAX'      },
+  { symbol: '^FCHI',  label: 'CAC 40'   },
+  { symbol: '^FTSE',  label: 'FTSE 100' },
+  { symbol: '^IBEX',  label: 'IBEX 35'  },
+  { symbol: '^AEX',   label: 'AEX'      },
+];
+
+const REIT_INDICES = [
+  { symbol: 'VNQ',    label: 'VNQ'    },
+  { symbol: 'IPRP.L', label: 'IPRP.L' },
+];
+
 function abortAfter(ms: number) {
   const ctrl = new AbortController();
   setTimeout(() => ctrl.abort(), ms);
   return ctrl;
+}
+
+async function fetchYahooSnapshot(symbol: string): Promise<YahooSnapshot> {
+  try {
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=2d&interval=1d`,
+      {
+        cache: 'no-store', signal: abortAfter(6_000).signal,
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+      }
+    );
+    if (!r.ok) return { price: null, change: null, changePct: null };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = await r.json();
+    const meta = data?.chart?.result?.[0]?.meta;
+    if (!meta?.regularMarketPrice) return { price: null, change: null, changePct: null };
+    return {
+      price:     meta.regularMarketPrice     as number,
+      change:    meta.regularMarketChange     as number ?? null,
+      changePct: meta.regularMarketChangePercent as number ?? null,
+    };
+  } catch {
+    return { price: null, change: null, changePct: null };
+  }
 }
 
 async function yahooChartFX(symbol: string): Promise<{ price: number | null; change: number | null; changePct: number | null }> {
@@ -234,7 +280,12 @@ function derivedNtnbBonds(
 }
 
 export async function GET() {
-  const [selicMeta, cdiRate, ipca12m, exchange, anbimaBonds, focusSelic, focusIpca] = await Promise.all([
+  const [
+    selicMeta, cdiRate, ipca12m,
+    exchange, anbimaBonds, focusSelic, focusIpca,
+    tbill3m, tbond10y, bund2y, bund10y,
+    ...marketSnaps
+  ] = await Promise.all([
     bcb(432),
     bcb(4389),
     bcb(13522),
@@ -242,7 +293,18 @@ export async function GET() {
     fetchANBIMANtnb(),
     fetchFocusAnnual('Selic'),
     fetchFocusAnnual('IPCA'),
+    fetchYahooSnapshot('^IRX'),
+    fetchYahooSnapshot('^TNX'),
+    fetchYahooSnapshot('^TMBMKDE-02Y'),
+    fetchYahooSnapshot('^TMBMKDE-10Y'),
+    ...REIT_INDICES.map(({ symbol }) => fetchYahooSnapshot(symbol)),
+    ...EU_INDICES.map(({ symbol })   => fetchYahooSnapshot(symbol)),
   ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const snapSlice = marketSnaps as any[];
+  const reits = REIT_INDICES.map(({ label }, i) => ({ label, ...snapSlice[i] }));
+  const euIndices = EU_INDICES.map(({ label }, i) => ({ label, ...snapSlice[REIT_INDICES.length + i] }));
 
   // ANBIMA indicative rates → Focus-derived Fisher fallback
   const tesouroDireto: TdBond[] =
@@ -256,6 +318,18 @@ export async function GET() {
       ipca12m: ipca12m   ?? null,
     },
     tesouroDireto,
+    jurosUS: {
+      fedFunds: FED_FUNDS_RATE,
+      tbill3m,
+      tbond10y,
+    },
+    jurosEU: {
+      ecb: ECB_RATE,
+      bund2y,
+      bund10y,
+    },
+    reits,
+    euIndices,
     updatedAt: new Date().toISOString(),
   });
 }
