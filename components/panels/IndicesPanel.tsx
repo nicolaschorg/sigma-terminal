@@ -35,7 +35,7 @@ const OFFSHORE_GROUPS = [
   { label: 'Multifamily US', symbols: ['IRT','ELME','NXRT','CLPR','EQR','AVB','MAA'] },
   { label: 'Multifamily EU', symbols: ['GYC.DE','GRI.L','VARN.SW','YIPS.MC','LEG.DE','TEG.DE'] },
   { label: 'Retail US',      symbols: ['CBL','SPG','O','NNN'] },
-  { label: 'Retail EU',      symbols: ['URW.PA','LI.PA','CARM.PA','VASTN.AS','WHA.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA'] },
+  { label: 'Retail EU',      symbols: ['URW.PA','LI.PA','CARM.PA','WHA.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA'] },
   { label: 'Office US',      symbols: ['DEI','JBGS','ESRT','CTO','BXP'] },
   { label: 'Office EU',      symbols: ['ICAD.PA','GPE.L','LAND.L','BLND.L'] },
   { label: 'Hotel US',       symbols: ['DRH','PK','RLJ','SHO','HST'] },

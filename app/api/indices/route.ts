@@ -11,7 +11,7 @@ const COMPONENTS: Record<string, string[]> = {
     'IRT','ELME','NXRT','CLPR','EQR','AVB','MAA',
     'GYC.DE','GRI.L','VARN.SW','YIPS.MC','LEG.DE','TEG.DE',
     'CBL','SPG','O','NNN',
-    'URW.PA','LI.PA','CARM.PA','VASTN.AS','WHA.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA',
+    'URW.PA','LI.PA','CARM.PA','WHA.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA',
     'DEI','JBGS','ESRT','CTO','BXP',
     'ICAD.PA','GPE.L','LAND.L','BLND.L',
     'DRH','PK','RLJ','SHO','HST',
