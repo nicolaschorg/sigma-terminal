@@ -33,9 +33,9 @@ type Tab = typeof TABS[number]['key'];
 
 const OFFSHORE_GROUPS = [
   { label: 'Multifamily US', symbols: ['IRT','ELME','NXRT','CLPR','EQR','AVB','MAA'] },
-  { label: 'Multifamily EU', symbols: ['GYC','GRI.L','VARN.SW','YIPS.MC','LEG.DE','TEG.DE'] },
+  { label: 'Multifamily EU', symbols: ['GYC.DE','GRI.L','VARN.SW','YIPS.MC','LEG.DE','TEG.DE'] },
   { label: 'Retail US',      symbols: ['CBL','SPG','O','NNN'] },
-  { label: 'Retail EU',      symbols: ['URW.PA','LI.PA','CARM.PA','VASTN.AS','WHA.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA','MFI.DE'] },
+  { label: 'Retail EU',      symbols: ['URW.PA','LI.PA','CARM.PA','VASTN.AS','WHA.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA'] },
   { label: 'Office US',      symbols: ['DEI','JBGS','ESRT','CTO','BXP'] },
   { label: 'Office EU',      symbols: ['ICAD.PA','GPE.L','LAND.L','BLND.L'] },
   { label: 'Hotel US',       symbols: ['DRH','PK','RLJ','SHO','HST'] },
@@ -49,12 +49,12 @@ const OFFSHORE_GROUPS = [
 const OFFSHORE_NAMES: Record<string, string> = {
   IRT:'Independence Realty', ELME:'Elme Communities', NXRT:'NexPoint', CLPR:'Clipper Realty',
   EQR:'Equity Residential', AVB:'AvalonBay', MAA:'Mid-America',
-  GYC:'Grand City', 'GRI.L':'Grainger', 'VARN.SW':'Varia', 'YIPS.MC':'Inversa Prime',
+  'GYC.DE':'Grand City', 'GRI.L':'Grainger', 'VARN.SW':'Varia', 'YIPS.MC':'Inversa Prime',
   'LEG.DE':'LEG Immobilien', 'TEG.DE':'TAG Immobilien',
   CBL:'CBL Properties', SPG:'Simon Property', O:'Realty Income', NNN:'NNN REIT',
   'URW.PA':'Unibail', 'LI.PA':'Klepierre', 'CARM.PA':'Carmila', 'VASTN.AS':'Vastned',
   'WHA.AS':'Wereldhave', 'ECMPA.AS':'Eurocommercial', 'DEQ.DE':'Deutsche Euroshop',
-  'HMSO.L':'Hammerson', 'SELER.PA':'Selectirente', 'MFI.DE':'MFI',
+  'HMSO.L':'Hammerson', 'SELER.PA':'Selectirente',
   DEI:'Douglas Emmett', JBGS:'JBG Smith', ESRT:'Empire State', CTO:'CTO Realty', BXP:'BXP Inc',
   'ICAD.PA':'Icade', 'GPE.L':'Great Portland', 'LAND.L':'Land Securities', 'BLND.L':'British Land',
   DRH:'DiamondRock', PK:'Park Hotels', RLJ:'RLJ Lodging', SHO:'Sunstone', HST:'Host Hotels',
@@ -196,20 +196,45 @@ export default function IndicesPanel({ panel: _panel }: { panel: Panel }) {
     const loadPrices = async () => {
       setLoading(true); setError(null);
       try {
-        let url = `/api/indices?tab=${tab}`;
-        if (tab !== 'offshore') {
-          // Fetch live B3 composition to get current index members (top 25 by weight)
-          try {
-            const compR = await fetch(`/api/index-composition/${tab.toUpperCase()}`);
-            if (compR.ok) {
-              const comp: { code: string; part: number }[] = await compR.json();
-              if (Array.isArray(comp) && comp.length) {
-                const syms = comp.slice(0, 25).map(c => c.code).join(',');
-                url = `/api/indices?symbols=${encodeURIComponent(syms)}`;
-              }
-            }
-          } catch { /* fall back to tab-based hardcoded list */ }
+        if (tab === 'offshore') {
+          const allSyms = OFFSHORE_GROUPS.flatMap(g => [...g.symbols]);
+          const [histSettled, liveSettled] = await Promise.allSettled([
+            fetch('/api/indices?tab=offshore').then(r => r.ok ? r.json() : Promise.reject()),
+            fetch(`/api/quote-yahoo?tickers=${allSyms.join(',')}`).then(r => r.ok ? r.json() : Promise.reject()),
+          ]);
+          const histArr: IndexStock[] = histSettled.status === 'fulfilled' && Array.isArray(histSettled.value) ? histSettled.value : [];
+          const histMap = new Map(histArr.map((s: IndexStock) => [s.symbol, s]));
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const liveMap: Record<string, { price: number | null; changePercent: number | null }> =
+            liveSettled.status === 'fulfilled' ? (liveSettled.value ?? {}) : {};
+          const merged: IndexStock[] = allSyms.map(sym => {
+            const hist = histMap.get(sym);
+            const live = liveMap[sym];
+            return {
+              symbol:   sym,
+              price:    live?.price          ?? hist?.price    ?? null,
+              varDay:   live?.changePercent  ?? hist?.varDay   ?? null,
+              varWeek:  hist?.varWeek  ?? null,
+              varMonth: hist?.varMonth ?? null,
+              varYTD:   hist?.varYTD   ?? null,
+            };
+          });
+          symsRef.current = allSyms;
+          if (!cancelled) { setStocks(merged); setSyms(allSyms); }
+          return;
         }
+
+        let url = `/api/indices?tab=${tab}`;
+        try {
+          const compR = await fetch(`/api/index-composition/${tab.toUpperCase()}`);
+          if (compR.ok) {
+            const comp: { code: string; part: number }[] = await compR.json();
+            if (Array.isArray(comp) && comp.length) {
+              const syms = comp.slice(0, 25).map(c => c.code).join(',');
+              url = `/api/indices?symbols=${encodeURIComponent(syms)}`;
+            }
+          }
+        } catch { /* fall back to tab-based hardcoded list */ }
 
         const r    = await fetch(url);
         const data = await r.json();
@@ -242,12 +267,12 @@ export default function IndicesPanel({ panel: _panel }: { panel: Panel }) {
       setPerfMap(map);
     };
 
-    loadPrices().then(() => { if (!cancelled) loadPerf(); });
+    loadPrices().then(() => { if (!cancelled && tab !== 'offshore') loadPerf(); });
 
-    const perfId = setInterval(loadPerf, 5 * 60_000);
+    const perfId = tab !== 'offshore' ? setInterval(loadPerf, 5 * 60_000) : undefined;
     return () => {
       cancelled = true;
-      clearInterval(perfId);
+      if (perfId != null) clearInterval(perfId);
     };
   }, [tab]);
 
@@ -428,8 +453,8 @@ export default function IndicesPanel({ panel: _panel }: { panel: Panel }) {
                 {(() => {
                   const grpStocks = grp.symbols.map(sym => stocksMap.get(sym)).filter((s): s is IndexStock => s != null);
                   const avg = (vals: (number | null)[]) => {
-                    const nums = vals.filter((v): v is number => v != null);
-                    return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+                    const nums = vals.filter((v): v is number => typeof v === 'number' && isFinite(v));
+                    return nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
                   };
                   const aDay   = avg(grpStocks.map(s => s.varDay));
                   const aWeek  = avg(grpStocks.map(s => s.varWeek));

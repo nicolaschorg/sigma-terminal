@@ -9,9 +9,9 @@ const COMPONENTS: Record<string, string[]> = {
   smll: ['CASH3','DESK3','PRIO3','RECV3','SMFT3','VAMO3','MOVI3','AIOS3','CVCB3','PETZ3','LWSA3','AESB3','TASA4','FRAS3','BMOB3'],
   offshore: [
     'IRT','ELME','NXRT','CLPR','EQR','AVB','MAA',
-    'GYC','GRI.L','VARN.SW','YIPS.MC','LEG.DE','TEG.DE',
+    'GYC.DE','GRI.L','VARN.SW','YIPS.MC','LEG.DE','TEG.DE',
     'CBL','SPG','O','NNN',
-    'URW.PA','LI.PA','CARM.PA','VASTN.AS','WHA.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA','MFI.DE',
+    'URW.PA','LI.PA','CARM.PA','VASTN.AS','WHA.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA',
     'DEI','JBGS','ESRT','CTO','BXP',
     'ICAD.PA','GPE.L','LAND.L','BLND.L',
     'DRH','PK','RLJ','SHO','HST',
@@ -145,40 +145,8 @@ export async function GET(req: NextRequest) {
         }
       }
     } catch { /* show N/A for prices */ }
-  } else {
-    // Yahoo Finance — fetch each offshore ticker in parallel
-    await Promise.allSettled(syms.map(async (sym) => {
-      try {
-        const r = await fetch(
-          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=2d&interval=1d`,
-          {
-            cache: 'no-store',
-            signal: abortAfter(8_000).signal,
-            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
-          }
-        );
-        if (!r.ok) return;
-        const data = await r.json();
-        const result0 = data?.chart?.result?.[0];
-        const meta = result0?.meta;
-        if (!meta?.regularMarketPrice) return;
-        const price = meta.regularMarketPrice as number;
-        let varDay: number | null = null;
-        if (meta.regularMarketChangePercent != null) {
-          varDay = meta.regularMarketChangePercent as number;
-        } else {
-          // Fallback: compute from closes (range=2d gives yesterday as closes[0])
-          const raw: (number | null)[] = result0?.indicators?.quote?.[0]?.close ?? [];
-          const closes = raw.filter((v): v is number => typeof v === 'number' && isFinite(v));
-          if (closes.length >= 1) {
-            const prevClose = closes[0];
-            varDay = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : null;
-          }
-        }
-        priceMap[sym] = { price, varDay };
-      } catch { /* skip */ }
-    }));
   }
+  // offshore: live prices fetched via /api/quote-yahoo by the client
 
   // ── 2. Backfill history cache — all uncached symbols in parallel ────────────
   const uncached = syms.filter(s => {
