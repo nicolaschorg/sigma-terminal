@@ -27,21 +27,21 @@ const TABS = [
   { key: 'ifix',     label: 'IFIX'  },
   { key: 'idiv',     label: 'IDIV'  },
   { key: 'smll',     label: 'SMLL'  },
-  { key: 'offshore', label: 'NILUS' },
+  { key: 'offshore', label: 'OFFSHORE' },
 ] as const;
 type Tab = typeof TABS[number]['key'];
 
 const OFFSHORE_GROUPS = [
   { label: 'Multifamily US', symbols: ['IRT','ELME','NXRT','CLPR','EQR','AVB','MAA'] },
-  { label: 'Multifamily EU', symbols: ['GYC','GRI.L','VARN.SW','INPR.MC','IVST.L','LEG.DE','TAG.DE'] },
+  { label: 'Multifamily EU', symbols: ['GYC','GRI.L','VARN.SW','YIPS.MC','LEG.DE','TEG.DE'] },
   { label: 'Retail US',      symbols: ['CBL','SPG','O','NNN'] },
-  { label: 'Retail EU',      symbols: ['URW.AS','LI.PA','CARM.PA','VASTN.AS','WHL.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA','MFI.DE'] },
+  { label: 'Retail EU',      symbols: ['URW.PA','LI.PA','CARM.PA','VASTN.AS','WHA.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA','MFI.DE'] },
   { label: 'Office US',      symbols: ['DEI','JBGS','ESRT','CTO','BXP'] },
   { label: 'Office EU',      symbols: ['ICAD.PA','GPE.L','LAND.L','BLND.L'] },
   { label: 'Hotel US',       symbols: ['DRH','PK','RLJ','SHO','HST'] },
   { label: 'Hotel EU',       symbols: ['PPH.L','MEL.MC'] },
-  { label: 'Industrial EU',  symbols: ['MONT.BR','VGP.BR','WDP.BR','SEGRO.L','ARGAN.PA'] },
-  { label: 'Diversificado EU', symbols: ['COL.MC','BRI.MI','KLPI.HE'] },
+  { label: 'Industrial EU',  symbols: ['MONT.BR','VGP.BR','WDP.BR','SGRO.L','ARG.PA'] },
+  { label: 'Diversificado EU', symbols: ['COL.MC','BRI.MI'] },
   { label: 'Farmland US',    symbols: ['FPI','LAND'] },
   { label: 'Industrial/Infra US', symbols: ['PLD','AMT'] },
 ] as const;
@@ -49,18 +49,18 @@ const OFFSHORE_GROUPS = [
 const OFFSHORE_NAMES: Record<string, string> = {
   IRT:'Independence Realty', ELME:'Elme Communities', NXRT:'NexPoint', CLPR:'Clipper Realty',
   EQR:'Equity Residential', AVB:'AvalonBay', MAA:'Mid-America',
-  GYC:'Grand City', 'GRI.L':'Grainger', 'VARN.SW':'Varia', 'INPR.MC':'Inversa Prime',
-  'IVST.L':'Investis', 'LEG.DE':'LEG Immobilien', 'TAG.DE':'TAG Immobilien',
+  GYC:'Grand City', 'GRI.L':'Grainger', 'VARN.SW':'Varia', 'YIPS.MC':'Inversa Prime',
+  'LEG.DE':'LEG Immobilien', 'TEG.DE':'TAG Immobilien',
   CBL:'CBL Properties', SPG:'Simon Property', O:'Realty Income', NNN:'NNN REIT',
-  'URW.AS':'Unibail', 'LI.PA':'Klepierre', 'CARM.PA':'Carmila', 'VASTN.AS':'Vastned',
-  'WHL.AS':'Wereldhave', 'ECMPA.AS':'Eurocommercial', 'DEQ.DE':'Deutsche Euroshop',
+  'URW.PA':'Unibail', 'LI.PA':'Klepierre', 'CARM.PA':'Carmila', 'VASTN.AS':'Vastned',
+  'WHA.AS':'Wereldhave', 'ECMPA.AS':'Eurocommercial', 'DEQ.DE':'Deutsche Euroshop',
   'HMSO.L':'Hammerson', 'SELER.PA':'Selectirente', 'MFI.DE':'MFI',
   DEI:'Douglas Emmett', JBGS:'JBG Smith', ESRT:'Empire State', CTO:'CTO Realty', BXP:'BXP Inc',
   'ICAD.PA':'Icade', 'GPE.L':'Great Portland', 'LAND.L':'Land Securities', 'BLND.L':'British Land',
   DRH:'DiamondRock', PK:'Park Hotels', RLJ:'RLJ Lodging', SHO:'Sunstone', HST:'Host Hotels',
   'PPH.L':'PPHE Hotels', 'MEL.MC':'Meliá Hotels',
-  'MONT.BR':'Montea', 'VGP.BR':'VGP', 'WDP.BR':'WDP', 'SEGRO.L':'Segro', 'ARGAN.PA':'Argan',
-  'COL.MC':'Colonial', 'BRI.MI':'Brioschi', 'KLPI.HE':'Klepierre FI',
+  'MONT.BR':'Montea', 'VGP.BR':'VGP', 'WDP.BR':'WDP', 'SGRO.L':'Segro', 'ARG.PA':'Argan',
+  'COL.MC':'Colonial', 'BRI.MI':'Brioschi',
   FPI:'Farmland Partners', LAND:'Gladstone Land',
   PLD:'Prologis', AMT:'American Tower',
 };
@@ -424,6 +424,37 @@ export default function IndicesPanel({ panel: _panel }: { panel: Panel }) {
                     </div>
                   );
                 })}
+                {/* Average row */}
+                {(() => {
+                  const grpStocks = grp.symbols.map(sym => stocksMap.get(sym)).filter((s): s is IndexStock => s != null);
+                  const avg = (vals: (number | null)[]) => {
+                    const nums = vals.filter((v): v is number => v != null);
+                    return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+                  };
+                  const aDay   = avg(grpStocks.map(s => s.varDay));
+                  const aWeek  = avg(grpStocks.map(s => s.varWeek));
+                  const aMonth = avg(grpStocks.map(s => s.varMonth));
+                  const aYTD   = avg(grpStocks.map(s => s.varYTD));
+                  return (
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '74px 106px 64px 50px 50px 50px 50px',
+                      gap: 4, padding: '3px 0',
+                      borderTop: '1px solid #1a2535',
+                      borderBottom: '1px solid #1a2535',
+                      fontSize: 9, alignItems: 'center',
+                      background: 'rgba(255,255,255,0.02)',
+                    }}>
+                      <span style={{ color: '#8ba4bc', fontStyle: 'italic', letterSpacing: 0.5 }}>MÉDIA</span>
+                      <span />
+                      <span />
+                      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontStyle: 'italic', ...pctStyle(aDay) }}>{fmtPct(aDay)}</span>
+                      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontStyle: 'italic', ...pctStyle(aWeek) }}>{fmtPct(aWeek)}</span>
+                      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontStyle: 'italic', ...pctStyle(aMonth) }}>{fmtPct(aMonth)}</span>
+                      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontStyle: 'italic', ...pctStyle(aYTD) }}>{fmtPct(aYTD)}</span>
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>

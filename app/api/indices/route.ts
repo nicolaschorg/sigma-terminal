@@ -7,31 +7,18 @@ const COMPONENTS: Record<string, string[]> = {
   ifix: ['MXRF11','HGLG11','KNRI11','XPML11','BCFF11','BRCR11','HGRE11','PVBI11','IRDM11','BRCO11','RBRF11','VGIR11','JSRE11','TGAR11','BTLG11','VILG11','RBVA11','HGBS11','XPLG11','HSML11'],
   idiv: ['TAEE11','CMIG4','TRPL4','EGIE3','CPFE3','ENGI11','SBSP3','VIVT3','BBSE3','CPLE6','ENBR3','KLBN11','CSMG3','SAPR11','AURE3'],
   smll: ['CASH3','DESK3','PRIO3','RECV3','SMFT3','VAMO3','MOVI3','AIOS3','CVCB3','PETZ3','LWSA3','AESB3','TASA4','FRAS3','BMOB3'],
-  // Nilus Offshore — international REITs grouped by sector/region
   offshore: [
-    // Multifamily US
     'IRT','ELME','NXRT','CLPR','EQR','AVB','MAA',
-    // Multifamily EU
-    'GYC','GRI.L','VARN.SW','INPR.MC','IVST.L','LEG.DE','TAG.DE',
-    // Retail US
+    'GYC','GRI.L','VARN.SW','YIPS.MC','LEG.DE','TEG.DE',
     'CBL','SPG','O','NNN',
-    // Retail EU
-    'URW.AS','LI.PA','CARM.PA','VASTN.AS','WHL.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA','MFI.DE',
-    // Office US
+    'URW.PA','LI.PA','CARM.PA','VASTN.AS','WHA.AS','ECMPA.AS','DEQ.DE','HMSO.L','SELER.PA','MFI.DE',
     'DEI','JBGS','ESRT','CTO','BXP',
-    // Office EU
     'ICAD.PA','GPE.L','LAND.L','BLND.L',
-    // Hotel US
     'DRH','PK','RLJ','SHO','HST',
-    // Hotel EU
     'PPH.L','MEL.MC',
-    // Industrial EU
-    'MONT.BR','VGP.BR','WDP.BR','SEGRO.L','ARGAN.PA',
-    // Diversificado EU
-    'COL.MC','BRI.MI','KLPI.HE',
-    // Farmland US
+    'MONT.BR','VGP.BR','WDP.BR','SGRO.L','ARG.PA',
+    'COL.MC','BRI.MI',
     'FPI','LAND',
-    // Industrial/Infra US
     'PLD','AMT',
   ],
 };
