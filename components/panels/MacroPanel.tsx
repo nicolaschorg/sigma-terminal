@@ -18,8 +18,8 @@ interface Snapshot {
 interface MacroData {
   exchange:  ExchangeRow[];
   rates:     { selic: number | null; cdi: number | null; ipca12m: number | null };
-  jurosUS?:  { fedFunds: number; tbill3m: Snapshot; tbond10y: Snapshot };
-  jurosEU?:  { ecb: number; bund2y: Snapshot; bund10y: Snapshot };
+  jurosUS?:  { fedFunds: number | null; tbill3m: Snapshot; tbond10y: Snapshot };
+  jurosEU?:  { ecb: number | null; bund2y: Snapshot; bund10y: Snapshot };
   reits?:    Array<{ label: string } & Snapshot>;
   euIndices?: Array<{ label: string } & Snapshot>;
   updatedAt: string;

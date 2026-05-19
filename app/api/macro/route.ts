@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const FED_FUNDS_RATE = 4.25;
-const ECB_RATE       = 2.00;
+// Policy rates fetched live — no hardcoded fallbacks
 
 interface ExchangeRow {
   label:     string;
@@ -41,6 +40,50 @@ function abortAfter(ms: number) {
   const ctrl = new AbortController();
   setTimeout(() => ctrl.abort(), ms);
   return ctrl;
+}
+
+// NY Fed public API — effective federal funds rate (last published day)
+async function fetchEFFR(): Promise<number | null> {
+  try {
+    const r = await fetch(
+      'https://markets.newyorkfed.org/api/rates/unsecured/effr/last/1.json',
+      { cache: 'no-store', signal: abortAfter(6_000).signal,
+        headers: { 'User-Agent': 'Mozilla/5.0' } }
+    );
+    if (!r.ok) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = await r.json();
+    const rate = data?.refRates?.refRate?.[0]?.percentRate;
+    return rate != null ? parseFloat(String(rate)) : null;
+  } catch {
+    return null;
+  }
+}
+
+// ECB SDMX-JSON API — deposit facility rate (latest observation)
+async function fetchECBRate(): Promise<number | null> {
+  try {
+    const r = await fetch(
+      'https://data.ecb.europa.eu/api/data/FM/B.U2.EUR.4F.KR.DFR.LEV?format=jsondata',
+      {
+        cache: 'no-store', signal: abortAfter(8_000).signal,
+        headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      }
+    );
+    if (!r.ok) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = await r.json();
+    const series = data?.dataSets?.[0]?.series;
+    if (!series) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const obs = (Object.values(series)[0] as any)?.observations;
+    if (!obs) return null;
+    const lastKey = String(Math.max(...Object.keys(obs).map(Number)));
+    const val = obs[lastKey]?.[0];
+    return val != null && isFinite(Number(val)) ? Number(val) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchYahooSnapshot(symbol: string): Promise<YahooSnapshot> {
@@ -283,6 +326,7 @@ export async function GET() {
   const [
     selicMeta, cdiRate, ipca12m,
     exchange, anbimaBonds, focusSelic, focusIpca,
+    effr, ecbRate,
     tbill3m, tbond10y, bund2y, bund10y,
     ...marketSnaps
   ] = await Promise.all([
@@ -293,6 +337,8 @@ export async function GET() {
     fetchANBIMANtnb(),
     fetchFocusAnnual('Selic'),
     fetchFocusAnnual('IPCA'),
+    fetchEFFR(),
+    fetchECBRate(),
     fetchYahooSnapshot('^IRX'),
     fetchYahooSnapshot('^TNX'),
     fetchYahooSnapshot('^TMBMKDE-02Y'),
@@ -319,12 +365,12 @@ export async function GET() {
     },
     tesouroDireto,
     jurosUS: {
-      fedFunds: FED_FUNDS_RATE,
+      fedFunds: effr,
       tbill3m,
       tbond10y,
     },
     jurosEU: {
-      ecb: ECB_RATE,
+      ecb: ecbRate,
       bund2y,
       bund10y,
     },

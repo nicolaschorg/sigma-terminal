@@ -172,12 +172,23 @@ export async function GET(req: NextRequest) {
         );
         if (!r.ok) return;
         const data = await r.json();
-        const meta = data?.chart?.result?.[0]?.meta;
+        const result0 = data?.chart?.result?.[0];
+        const meta = result0?.meta;
         if (!meta?.regularMarketPrice) return;
-        priceMap[sym] = {
-          price:  meta.regularMarketPrice as number,
-          varDay: (meta.regularMarketChangePercent as number) ?? null,
-        };
+        const price = meta.regularMarketPrice as number;
+        let varDay: number | null = null;
+        if (meta.regularMarketChangePercent != null) {
+          varDay = meta.regularMarketChangePercent as number;
+        } else {
+          // Fallback: compute from closes (range=2d gives yesterday as closes[0])
+          const raw: (number | null)[] = result0?.indicators?.quote?.[0]?.close ?? [];
+          const closes = raw.filter((v): v is number => typeof v === 'number' && isFinite(v));
+          if (closes.length >= 1) {
+            const prevClose = closes[0];
+            varDay = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : null;
+          }
+        }
+        priceMap[sym] = { price, varDay };
       } catch { /* skip */ }
     }));
   }

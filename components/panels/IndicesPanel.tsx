@@ -46,6 +46,25 @@ const OFFSHORE_GROUPS = [
   { label: 'Industrial/Infra US', symbols: ['PLD','AMT'] },
 ] as const;
 
+const OFFSHORE_NAMES: Record<string, string> = {
+  IRT:'Independence Realty', ELME:'Elme Communities', NXRT:'NexPoint', CLPR:'Clipper Realty',
+  EQR:'Equity Residential', AVB:'AvalonBay', MAA:'Mid-America',
+  GYC:'Grand City', 'GRI.L':'Grainger', 'VARN.SW':'Varia', 'INPR.MC':'Inversa Prime',
+  'IVST.L':'Investis', 'LEG.DE':'LEG Immobilien', 'TAG.DE':'TAG Immobilien',
+  CBL:'CBL Properties', SPG:'Simon Property', O:'Realty Income', NNN:'NNN REIT',
+  'URW.AS':'Unibail', 'LI.PA':'Klepierre', 'CARM.PA':'Carmila', 'VASTN.AS':'Vastned',
+  'WHL.AS':'Wereldhave', 'ECMPA.AS':'Eurocommercial', 'DEQ.DE':'Deutsche Euroshop',
+  'HMSO.L':'Hammerson', 'SELER.PA':'Selectirente', 'MFI.DE':'MFI',
+  DEI:'Douglas Emmett', JBGS:'JBG Smith', ESRT:'Empire State', CTO:'CTO Realty', BXP:'BXP Inc',
+  'ICAD.PA':'Icade', 'GPE.L':'Great Portland', 'LAND.L':'Land Securities', 'BLND.L':'British Land',
+  DRH:'DiamondRock', PK:'Park Hotels', RLJ:'RLJ Lodging', SHO:'Sunstone', HST:'Host Hotels',
+  'PPH.L':'PPHE Hotels', 'MEL.MC':'Meliá Hotels',
+  'MONT.BR':'Montea', 'VGP.BR':'VGP', 'WDP.BR':'WDP', 'SEGRO.L':'Segro', 'ARGAN.PA':'Argan',
+  'COL.MC':'Colonial', 'BRI.MI':'Brioschi', 'KLPI.HE':'Klepierre FI',
+  FPI:'Farmland Partners', LAND:'Gladstone Land',
+  PLD:'Prologis', AMT:'American Tower',
+};
+
 const OVERRIDE_KEY = 'sigma-idx-overrides';
 
 const fmtPrice = (v: number | null) =>
@@ -338,13 +357,14 @@ export default function IndicesPanel({ panel: _panel }: { panel: Panel }) {
             {/* Offshore column header */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '80px 68px 52px 52px 52px 52px',
+              gridTemplateColumns: '74px 106px 64px 50px 50px 50px 50px',
               gap: 4, padding: '4px 0',
               borderBottom: '1px solid #1a2535',
               fontSize: 8, letterSpacing: 0.8,
               color: '#8ba4bc',
             }}>
               <span>TICKER</span>
+              <span>NOME</span>
               <span style={{ textAlign: 'right' }}>PREÇO</span>
               <span style={{ textAlign: 'right' }}>DIA%</span>
               <span style={{ textAlign: 'right' }}>SEM%</span>
@@ -370,13 +390,17 @@ export default function IndicesPanel({ panel: _panel }: { panel: Panel }) {
                       className="row"
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '80px 68px 52px 52px 52px 52px',
+                        gridTemplateColumns: '74px 106px 64px 50px 50px 50px 50px',
                         gap: 4, padding: '3px 0',
                         borderBottom: '1px solid #0e1620',
                         fontSize: 10, alignItems: 'center',
                       }}
                     >
                       <span style={{ color: '#f7941d', fontWeight: 600, fontSize: 9 }}>{sym}</span>
+                      <span style={{
+                        color: '#5a7a9a', fontSize: 9,
+                        overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                      }}>{OFFSHORE_NAMES[sym] ?? ''}</span>
                       <span style={{
                         textAlign: 'right', color: '#d4dce8',
                         fontVariantNumeric: 'tabular-nums',
