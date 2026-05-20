@@ -303,6 +303,30 @@ export default function IndicesPanel({ panel: _panel }: { panel: Panel }) {
 
   const stocksMap = useMemo(() => new Map(stocks.map(s => [s.symbol, s])), [stocks]);
 
+  const sortedOffshore = useMemo(() => {
+    if (tab !== 'offshore' || !sortKey) return null;
+    const all: IndexStock[] = OFFSHORE_GROUPS
+      .flatMap(g => [...g.symbols])
+      .map(sym => stocksMap.get(sym) ?? { symbol: sym, price: null, varDay: null, varWeek: null, varMonth: null, varYTD: null });
+    return [...all].sort((a, b) => {
+      if (sortKey === 'ticker') {
+        const r = a.symbol.localeCompare(b.symbol);
+        return sortDir === 'desc' ? -r : r;
+      }
+      let va: number | null = null;
+      let vb: number | null = null;
+      if      (sortKey === 'price')  { va = a.price;    vb = b.price;    }
+      else if (sortKey === 'day')    { va = a.varDay;   vb = b.varDay;   }
+      else if (sortKey === 'week')   { va = a.varWeek;  vb = b.varWeek;  }
+      else if (sortKey === 'month')  { va = a.varMonth; vb = b.varMonth; }
+      else if (sortKey === 'ytd')    { va = a.varYTD;   vb = b.varYTD;   }
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return sortDir === 'desc' ? vb - va : va - vb;
+    });
+  }, [tab, sortKey, sortDir, stocksMap]);
+
   const sortedStocks = useMemo(() => {
     if (!sortKey) return stocks;
     const getV = (s: IndexStock, f: HistField): number | null => {
@@ -379,109 +403,123 @@ export default function IndicesPanel({ panel: _panel }: { panel: Panel }) {
         )}
         {!loading && !error && tab === 'offshore' && (
           <div style={{ padding: '0 12px' }}>
-            {/* Offshore column header */}
+            {/* Sticky sortable header */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: '74px 106px 64px 50px 50px 50px 50px',
               gap: 4, padding: '4px 0',
               borderBottom: '1px solid #1a2535',
               fontSize: 8, letterSpacing: 0.8,
-              color: '#8ba4bc',
+              position: 'sticky', top: 0, zIndex: 2,
+              background: '#080c14',
             }}>
-              <span>TICKER</span>
-              <span>NOME</span>
-              <span style={{ textAlign: 'right' }}>PREÇO</span>
-              <span style={{ textAlign: 'right' }}>DIA%</span>
-              <span style={{ textAlign: 'right' }}>SEM%</span>
-              <span style={{ textAlign: 'right' }}>MÊS%</span>
-              <span style={{ textAlign: 'right' }}>YTD%</span>
+              {([
+                ['ticker', 'TICKER', false],
+                [null,     'NOME',   false],
+                ['price',  'PREÇO',  true],
+                ['day',    'DIA%',   true],
+                ['week',   'SEM%',   true],
+                ['month',  'MÊS%',   true],
+                ['ytd',    'YTD%',   true],
+              ] as Array<[IdxSortKey | null, string, boolean]>).map(([col, label, right]) => (
+                <span
+                  key={label}
+                  onClick={() => col != null && handleSort(col)}
+                  onMouseEnter={() => col != null && setHoverCol(col)}
+                  onMouseLeave={() => setHoverCol(null)}
+                  style={{
+                    textAlign: right ? 'right' : 'left',
+                    cursor: col != null ? 'pointer' : 'default',
+                    userSelect: 'none',
+                    color: col != null && sortKey === col ? '#f7941d'
+                         : col != null && hoverCol === col ? '#c8d4e0'
+                         : '#8ba4bc',
+                    transition: 'color 0.1s',
+                  }}
+                >
+                  {label}{col != null && sortKey === col ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
+                </span>
+              ))}
             </div>
-            {OFFSHORE_GROUPS.map((grp) => (
-              <div key={grp.label}>
-                <div style={{
-                  fontSize: 8, letterSpacing: 0.7, color: '#3a556a',
-                  padding: '6px 0 2px',
-                  borderBottom: '1px solid #141e2c',
-                  textTransform: 'uppercase',
+
+            {sortedOffshore ? (
+              /* Flat sorted view */
+              sortedOffshore.map((h) => (
+                <div key={h.symbol} className="row" style={{
+                  display: 'grid',
+                  gridTemplateColumns: '74px 106px 64px 50px 50px 50px 50px',
+                  gap: 4, padding: '3px 0',
+                  borderBottom: '1px solid #0e1620',
+                  fontSize: 10, alignItems: 'center',
                 }}>
-                  {grp.label}
+                  <span style={{ color: '#f7941d', fontWeight: 600, fontSize: 9 }}>{h.symbol}</span>
+                  <span style={{ color: '#5a7a9a', fontSize: 9, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{OFFSHORE_NAMES[h.symbol] ?? ''}</span>
+                  <span style={{ textAlign: 'right', color: '#d4dce8', fontVariantNumeric: 'tabular-nums' }}>{fmtPrice(h.price)}</span>
+                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', ...pctStyle(h.varDay) }}>{fmtPct(h.varDay)}</span>
+                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', ...pctStyle(h.varWeek) }}>{fmtPct(h.varWeek)}</span>
+                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', ...pctStyle(h.varMonth) }}>{fmtPct(h.varMonth)}</span>
+                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', ...pctStyle(h.varYTD) }}>{fmtPct(h.varYTD)}</span>
                 </div>
-                {grp.symbols.map((sym) => {
-                  const s = stocksMap.get(sym);
-                  const h = s ?? { symbol: sym, price: null, varDay: null, varWeek: null, varMonth: null, varYTD: null };
-                  return (
-                    <div
-                      key={sym}
-                      className="row"
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '74px 106px 64px 50px 50px 50px 50px',
-                        gap: 4, padding: '3px 0',
-                        borderBottom: '1px solid #0e1620',
-                        fontSize: 10, alignItems: 'center',
-                      }}
-                    >
-                      <span style={{ color: '#f7941d', fontWeight: 600, fontSize: 9 }}>{sym}</span>
-                      <span style={{
-                        color: '#5a7a9a', fontSize: 9,
-                        overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-                      }}>{OFFSHORE_NAMES[sym] ?? ''}</span>
-                      <span style={{
-                        textAlign: 'right', color: '#d4dce8',
-                        fontVariantNumeric: 'tabular-nums',
-                      }}>{fmtPrice(h.price)}</span>
-                      <span style={{
-                        textAlign: 'right', fontVariantNumeric: 'tabular-nums',
-                        ...pctStyle(h.varDay),
-                      }}>{fmtPct(h.varDay)}</span>
-                      <span style={{
-                        textAlign: 'right', fontVariantNumeric: 'tabular-nums',
-                        ...pctStyle(h.varWeek),
-                      }}>{fmtPct(h.varWeek)}</span>
-                      <span style={{
-                        textAlign: 'right', fontVariantNumeric: 'tabular-nums',
-                        ...pctStyle(h.varMonth),
-                      }}>{fmtPct(h.varMonth)}</span>
-                      <span style={{
-                        textAlign: 'right', fontVariantNumeric: 'tabular-nums',
-                        ...pctStyle(h.varYTD),
-                      }}>{fmtPct(h.varYTD)}</span>
-                    </div>
-                  );
-                })}
-                {/* Average row */}
-                {(() => {
-                  const grpStocks = grp.symbols.map(sym => stocksMap.get(sym)).filter((s): s is IndexStock => s != null);
-                  const avg = (vals: (number | null)[]) => {
-                    const nums = vals.filter((v): v is number => typeof v === 'number' && isFinite(v));
-                    return nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
-                  };
-                  const aDay   = avg(grpStocks.map(s => s.varDay));
-                  const aWeek  = avg(grpStocks.map(s => s.varWeek));
-                  const aMonth = avg(grpStocks.map(s => s.varMonth));
-                  const aYTD   = avg(grpStocks.map(s => s.varYTD));
-                  return (
+              ))
+            ) : (
+              /* Grouped view */
+              OFFSHORE_GROUPS.map((grp) => {
+                const avg = (vals: (number | null)[]) => {
+                  const nums = vals.filter((v): v is number => typeof v === 'number' && isFinite(v));
+                  return nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+                };
+                const grpStocks = grp.symbols.map(sym => stocksMap.get(sym)).filter((s): s is IndexStock => s != null);
+                const aDay = avg(grpStocks.map(s => s.varDay));
+                const aWeek = avg(grpStocks.map(s => s.varWeek));
+                const aMonth = avg(grpStocks.map(s => s.varMonth));
+                const aYTD = avg(grpStocks.map(s => s.varYTD));
+                return (
+                  <div key={grp.label}>
+                    <div style={{
+                      fontSize: 8, letterSpacing: 0.7, color: '#3a556a',
+                      padding: '6px 0 2px', borderBottom: '1px solid #141e2c',
+                      textTransform: 'uppercase',
+                    }}>{grp.label}</div>
+                    {grp.symbols.map((sym) => {
+                      const s = stocksMap.get(sym);
+                      const h = s ?? { symbol: sym, price: null, varDay: null, varWeek: null, varMonth: null, varYTD: null };
+                      return (
+                        <div key={sym} className="row" style={{
+                          display: 'grid',
+                          gridTemplateColumns: '74px 106px 64px 50px 50px 50px 50px',
+                          gap: 4, padding: '3px 0',
+                          borderBottom: '1px solid #0e1620',
+                          fontSize: 10, alignItems: 'center',
+                        }}>
+                          <span style={{ color: '#f7941d', fontWeight: 600, fontSize: 9 }}>{sym}</span>
+                          <span style={{ color: '#5a7a9a', fontSize: 9, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{OFFSHORE_NAMES[sym] ?? ''}</span>
+                          <span style={{ textAlign: 'right', color: '#d4dce8', fontVariantNumeric: 'tabular-nums' }}>{fmtPrice(h.price)}</span>
+                          <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', ...pctStyle(h.varDay) }}>{fmtPct(h.varDay)}</span>
+                          <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', ...pctStyle(h.varWeek) }}>{fmtPct(h.varWeek)}</span>
+                          <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', ...pctStyle(h.varMonth) }}>{fmtPct(h.varMonth)}</span>
+                          <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', ...pctStyle(h.varYTD) }}>{fmtPct(h.varYTD)}</span>
+                        </div>
+                      );
+                    })}
                     <div style={{
                       display: 'grid',
                       gridTemplateColumns: '74px 106px 64px 50px 50px 50px 50px',
                       gap: 4, padding: '3px 0',
-                      borderTop: '1px solid #1a2535',
-                      borderBottom: '1px solid #1a2535',
+                      borderTop: '1px solid #1a2535', borderBottom: '1px solid #1a2535',
                       fontSize: 9, alignItems: 'center',
                       background: 'rgba(255,255,255,0.02)',
                     }}>
                       <span style={{ color: '#8ba4bc', fontStyle: 'italic', letterSpacing: 0.5 }}>MÉDIA</span>
-                      <span />
-                      <span />
+                      <span /><span />
                       <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontStyle: 'italic', ...pctStyle(aDay) }}>{fmtPct(aDay)}</span>
                       <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontStyle: 'italic', ...pctStyle(aWeek) }}>{fmtPct(aWeek)}</span>
                       <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontStyle: 'italic', ...pctStyle(aMonth) }}>{fmtPct(aMonth)}</span>
                       <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontStyle: 'italic', ...pctStyle(aYTD) }}>{fmtPct(aYTD)}</span>
                     </div>
-                  );
-                })()}
-              </div>
-            ))}
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
 
