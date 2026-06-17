@@ -20,12 +20,12 @@ const FEEDS = [
 ];
 
 interface NewsItem {
-  uuid:                string;
-  title:               string;
-  link:                string;
-  publisher:           string;
-  lang:                string;
-  providerPublishTime: number;
+  uuid:        string;
+  title:       string;
+  link:        string;
+  publisher:   string;
+  lang:        string;
+  publishedAt: string;
 }
 
 function abortAfter(ms: number): AbortController {
@@ -111,17 +111,16 @@ export async function GET() {
         for (const item of items) {
           const title = resolveText(item.title);
           const link  = resolveLink(item.link ?? item.guid);
-          const pub   = resolveText(item.pubDate ?? item.published ?? item.updated ?? '');
-          const ts    = pub ? Math.floor(new Date(pub).getTime() / 1000) : 0;
+          const pub = resolveText(item.pubDate ?? item.published ?? item.updated ?? '');
 
           if (title) {
             allItems.push({
-              uuid:                `${source}-${ts}-${Math.random().toString(36).slice(2)}`,
+              uuid:        `${source}-${pub}-${Math.random().toString(36).slice(2)}`,
               title,
               link,
-              publisher:           source,
+              publisher:   source,
               lang,
-              providerPublishTime: ts,
+              publishedAt: pub,
             });
           }
         }
@@ -129,7 +128,7 @@ export async function GET() {
     })
   );
 
-  allItems.sort((a, b) => b.providerPublishTime - a.providerPublishTime);
+  allItems.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
 
   return NextResponse.json(allItems.slice(0, 50));
 }

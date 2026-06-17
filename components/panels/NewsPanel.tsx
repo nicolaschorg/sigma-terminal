@@ -8,17 +8,19 @@ interface NewsItem {
   publisher?: string;
   lang?: string;
   link: string;
-  providerPublishTime?: number;
+  publishedAt?: string;
 }
 
-function fmtTime(ts?: number): string {
-  if (!ts) return '';
-  return new Date(ts * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+function fmtTime(pub?: string): string {
+  if (!pub) return '';
+  const d = new Date(pub);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
 function NewsRow({ item }: { item: NewsItem }) {
   const src  = item.publisher ?? '';
-  const t    = fmtTime(item.providerPublishTime);
+  const t    = fmtTime(item.publishedAt);
   const isEn = item.lang === 'en';
   return (
     <a
