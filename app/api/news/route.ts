@@ -17,6 +17,8 @@ const FEEDS = [
   { url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html',                  source: 'CNBC',            lang: 'en' },
   { url: 'https://feeds.bloomberg.com/markets/news.rss',                           source: 'Bloomberg',       lang: 'en' },
   { url: 'https://www.ft.com/rss/home',                                            source: 'FT',              lang: 'en' },
+  { url: 'https://feeds.marketwatch.com/marketwatch/topstories',                   source: 'MarketWatch',     lang: 'en' },
+  { url: 'https://asia.nikkei.com/rss/feed/nar',                                   source: 'Nikkei Asia',     lang: 'en' },
 ];
 
 interface NewsItem {
@@ -134,6 +136,8 @@ export async function GET() {
     'InfoMoney':       8,
     'CNN Brasil':      8,
     'Valor Econômico': 8,
+    'MarketWatch':     5,
+    'Nikkei Asia':     5,
   };
   const DEFAULT_CAP_INTL = 6;
 
