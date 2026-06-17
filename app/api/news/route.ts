@@ -128,7 +128,25 @@ export async function GET() {
     })
   );
 
-  allItems.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  const CAP: Record<string, number> = {
+    'Metrópoles':      5,
+    'Exame':           5,
+    'InfoMoney':       8,
+    'CNN Brasil':      8,
+    'Valor Econômico': 8,
+  };
+  const DEFAULT_CAP_INTL = 6;
 
-  return NextResponse.json(allItems.slice(0, 50));
+  const countBySource: Record<string, number> = {};
+  const capped = allItems.filter(item => {
+    const cap = CAP[item.publisher] ?? DEFAULT_CAP_INTL;
+    const n   = countBySource[item.publisher] ?? 0;
+    if (n >= cap) return false;
+    countBySource[item.publisher] = n + 1;
+    return true;
+  });
+
+  capped.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
+  return NextResponse.json(capped.slice(0, 50));
 }
