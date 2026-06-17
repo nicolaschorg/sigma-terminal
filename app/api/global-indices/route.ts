@@ -167,6 +167,52 @@ const YIELD_INSTRUMENTS = [
   { symbol: '^IRX', label: 'US 2Y'  },
 ];
 
+async function fetchEcbYield(): Promise<YieldEntry> {
+  const label = 'EUR 10Y (AAA)';
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 6_000);
+    const r = await fetch(
+      'https://data-api.ecb.europa.eu/service/data/YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_10Y?format=jsondata&lastNObservations=2',
+      { cache: 'no-store', signal: ctrl.signal }
+    );
+    if (!r.ok) return { label, rate: null, changePct: null };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d: any = await r.json();
+    const series = d?.dataSets?.[0]?.series;
+    const key    = series ? Object.keys(series)[0] : null;
+    if (!key) return { label, rate: null, changePct: null };
+    const obs    = series[key]?.observations ?? {};
+    const sorted = Object.keys(obs).sort((a, b) => +a - +b);
+    const latest = sorted.length > 0 ? (obs[sorted[sorted.length - 1]]?.[0] as number) : null;
+    const prev   = sorted.length > 1 ? (obs[sorted[sorted.length - 2]]?.[0] as number) : null;
+    const changePct = latest != null && prev != null && prev > 0
+      ? ((latest - prev) / prev) * 100 : null;
+    return { label, rate: typeof latest === 'number' ? latest : null, changePct };
+  } catch { return { label, rate: null, changePct: null }; }
+}
+
+async function fetchBoeGilt(): Promise<YieldEntry> {
+  const label = 'UK 10Y (Gilt)';
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 8_000);
+    const r = await fetch(
+      'https://www.bankofengland.co.uk/boeapps/database/_iadb-FromShowColumns.asp?csv.x=yes&Datefrom=01/Mar/2026&Dateto=now&SeriesCodes=IUDMNZC&CSVF=TN&UsingCodes=Y',
+      { cache: 'no-store', signal: ctrl.signal, headers: { 'User-Agent': 'Mozilla/5.0' } }
+    );
+    if (!r.ok) return { label, rate: null, changePct: null };
+    const text  = await r.text();
+    const lines = text.trim().split('\n').filter(l => /^\d/.test(l.trim()));
+    if (!lines.length) return { label, rate: null, changePct: null };
+    const latest = parseFloat(lines[lines.length - 1].split(',')[1]);
+    const prev   = lines.length > 1 ? parseFloat(lines[lines.length - 2].split(',')[1]) : NaN;
+    const changePct = isFinite(latest) && isFinite(prev) && prev > 0
+      ? ((latest - prev) / prev) * 100 : null;
+    return { label, rate: isFinite(latest) ? latest : null, changePct };
+  } catch { return { label, rate: null, changePct: null }; }
+}
+
 async function fetchEcbRate(): Promise<number | null> {
   try {
     const ctrl = new AbortController();
@@ -199,7 +245,7 @@ const GLOBAL_INDICES = [
 ];
 
 export async function GET() {
-  const [brasilResults, globalResults, yieldResults, ecbRate] = await Promise.all([
+  const [brasilResults, globalResults, yieldResults, ecbYield, boeGilt, ecbRate] = await Promise.all([
     Promise.all(
       BRASIL_INDICES.map(async (idx) => {
         const q = await withFallbacks(idx.sources);
@@ -218,6 +264,8 @@ export async function GET() {
         return { label, rate: q.price, changePct: q.changePct } as YieldEntry;
       })
     ),
+    fetchEcbYield(),
+    fetchBoeGilt(),
     fetchEcbRate(),
   ]);
 
@@ -225,7 +273,9 @@ export async function GET() {
     .sort((a, b) => BRASIL_ORDER.indexOf(a.label) - BRASIL_ORDER.indexOf(b.label));
 
   const yields: YieldEntry[] = [
-    ...yieldResults,
+    ...yieldResults,          // US 10Y, US 2Y
+    ecbYield,                 // EUR 10Y (AAA)
+    boeGilt,                  // UK 10Y (Gilt)
     { label: 'BCE', rate: ecbRate, changePct: null },
   ];
 

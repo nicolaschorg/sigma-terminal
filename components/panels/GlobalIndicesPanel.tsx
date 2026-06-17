@@ -148,7 +148,7 @@ export default function GlobalIndicesPanel({ panel: _panel }: { panel: Panel }) 
         }
 
         {yields.length > 0 && (
-          <>
+          <div style={{ marginTop: 16, borderTop: '1px solid #1a2535' }}>
             <ColLabel label="Juros Soberanos" />
             <div style={{
               display: 'grid', gridTemplateColumns: YIELD_COLS,
@@ -161,7 +161,7 @@ export default function GlobalIndicesPanel({ panel: _panel }: { panel: Panel }) 
               <span style={{ textAlign: 'right' }}>DIA%</span>
             </div>
             {yields.map(e => <YieldRow key={e.label} entry={e} />)}
-          </>
+          </div>
         )}
 
         {ts && (
