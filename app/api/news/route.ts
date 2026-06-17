@@ -4,15 +4,19 @@ import { XMLParser } from 'fast-xml-parser';
 export const dynamic = 'force-dynamic';
 
 const FEEDS = [
-  { url: 'https://www.infomoney.com.br/feed/',          source: 'InfoMoney'      },
-  { url: 'https://exame.com/feed/',                     source: 'Exame'          },
-  { url: 'https://g1.globo.com/rss/g1/economia/',       source: 'G1'             },
-  { url: 'https://www.cnnbrasil.com.br/feed/',          source: 'CNN Brasil'     },
-  { url: 'https://metropoles.com/feed/',                source: 'Metrópoles'     },
-  { url: 'https://braziljournal.com/feed/',             source: 'Brazil Journal' },
-  { url: 'https://neofeed.com.br/feed/',                source: 'NeoFeed'        },
-  { url: 'https://metroquadrado.com.br/noticias/feed/', source: 'Metro Quadrado' },
-  { url: 'https://valor.globo.com/rss/financas',        source: 'Valor Econômico'},
+  // Nacionais
+  { url: 'https://www.infomoney.com.br/feed/',                                     source: 'InfoMoney',       lang: 'pt' },
+  { url: 'https://exame.com/feed/',                                                 source: 'Exame',           lang: 'pt' },
+  { url: 'https://www.cnnbrasil.com.br/feed/',                                      source: 'CNN Brasil',      lang: 'pt' },
+  { url: 'https://metropoles.com/feed/',                                             source: 'Metrópoles',      lang: 'pt' },
+  { url: 'https://valor.globo.com/rss/financas',                                    source: 'Valor Econômico', lang: 'pt' },
+  // Internacionais
+  { url: 'https://feeds.reuters.com/reuters/businessNews',                          source: 'Reuters',         lang: 'en' },
+  { url: 'https://feeds.a.wsj.com/rss/RSSMarketsMain.xml',                         source: 'WSJ',             lang: 'en' },
+  { url: 'https://www.economist.com/finance-and-economics/rss.xml',                source: 'The Economist',   lang: 'en' },
+  { url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html',                  source: 'CNBC',            lang: 'en' },
+  { url: 'https://feeds.bloomberg.com/markets/news.rss',                           source: 'Bloomberg',       lang: 'en' },
+  { url: 'https://www.ft.com/rss/home',                                            source: 'FT',              lang: 'en' },
 ];
 
 interface NewsItem {
@@ -20,6 +24,7 @@ interface NewsItem {
   title:               string;
   link:                string;
   publisher:           string;
+  lang:                string;
   providerPublishTime: number;
 }
 
@@ -82,7 +87,7 @@ export async function GET() {
   const allItems: NewsItem[] = [];
 
   await Promise.allSettled(
-    FEEDS.map(async ({ url, source }) => {
+    FEEDS.map(async ({ url, source, lang }) => {
       try {
         const r = await fetch(url, {
           cache:   'no-store',
@@ -115,6 +120,7 @@ export async function GET() {
               title,
               link,
               publisher:           source,
+              lang,
               providerPublishTime: ts,
             });
           }
@@ -125,5 +131,5 @@ export async function GET() {
 
   allItems.sort((a, b) => b.providerPublishTime - a.providerPublishTime);
 
-  return NextResponse.json(allItems.slice(0, 60));
+  return NextResponse.json(allItems.slice(0, 50));
 }

@@ -6,6 +6,7 @@ interface NewsItem {
   uuid?: string;
   title: string;
   publisher?: string;
+  lang?: string;
   link: string;
   providerPublishTime?: number;
 }
@@ -16,8 +17,9 @@ function fmtTime(ts?: number): string {
 }
 
 function NewsRow({ item }: { item: NewsItem }) {
-  const src = item.publisher ?? '';
-  const t   = fmtTime(item.providerPublishTime);
+  const src  = item.publisher ?? '';
+  const t    = fmtTime(item.providerPublishTime);
+  const isEn = item.lang === 'en';
   return (
     <a
       href={item.link}
@@ -34,9 +36,12 @@ function NewsRow({ item }: { item: NewsItem }) {
         whiteSpace: 'nowrap',
       }}
     >
+      {isEn && (
+        <span style={{ color: '#4a9eff', fontSize: 9, flexShrink: 0 }}>[EN]</span>
+      )}
       {src && (
         <span style={{ color: '#f7941d', fontSize: 9, flexShrink: 0 }}>
-          [{src.toUpperCase().slice(0, 10)}]
+          [{src.toUpperCase().slice(0, 12)}]
         </span>
       )}
       <span style={{
