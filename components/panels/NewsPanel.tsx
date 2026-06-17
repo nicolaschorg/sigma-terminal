@@ -11,7 +11,7 @@ interface NewsItem {
   publishedAt?: string;
 }
 
-const HEADLINE_SOURCES = ['Bloomberg', 'FT', 'CNBC', 'Valor Econômico', 'InfoMoney'];
+const HEADLINE_SOURCES = ['Bloomberg', 'FT', 'CNBC', 'Reuters', 'MarketWatch', 'Nikkei Asia', 'Valor Econômico', 'InfoMoney'];
 
 function fmtTime(pub?: string): string {
   if (!pub) return '';
