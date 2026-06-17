@@ -16,6 +16,12 @@ export interface GlobalIndexEntry {
   group:     'brasil' | 'global';
 }
 
+export interface YieldEntry {
+  label:     string;
+  rate:      number | null;
+  changePct: number | null;
+}
+
 // ── Module-level subscription state (not Zustand state) ───────────────────────
 // Using module vars avoids serialisation issues with Sets/timers in Zustand.
 const symRefCounts = new Map<string, number>();
@@ -37,8 +43,8 @@ async function doFetchGlobal() {
   try {
     const r = await fetch('/api/global-indices');
     if (!r.ok) return;
-    const { brasil = [], global: gbl = [], updatedAt = '' } = await r.json();
-    useMarketData.setState({ brasil, global: gbl, updatedAt });
+    const { brasil = [], global: gbl = [], yields = [], updatedAt = '' } = await r.json();
+    useMarketData.setState({ brasil, global: gbl, yields, updatedAt });
   } catch { /* keep previous */ }
 }
 
@@ -47,11 +53,13 @@ export const useMarketData = create<{
   quotes:    Record<string, QuoteSnapshot>;
   brasil:    GlobalIndexEntry[];
   global:    GlobalIndexEntry[];
+  yields:    YieldEntry[];
   updatedAt: string;
 }>(() => ({
   quotes:    {},
   brasil:    [],
   global:    [],
+  yields:    [],
   updatedAt: '',
 }));
 

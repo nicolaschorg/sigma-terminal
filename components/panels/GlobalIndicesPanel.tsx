@@ -1,6 +1,6 @@
 'use client';
 import { Panel } from '@/types';
-import { useMarketData, useMarketSymbols, type GlobalIndexEntry } from '@/store/useMarketData';
+import { useMarketData, useMarketSymbols, type GlobalIndexEntry, type YieldEntry } from '@/store/useMarketData';
 
 // ── Value formatter ───────────────────────────────────────────────────────────
 function fmtVal(v: number | null): string {
@@ -22,8 +22,9 @@ function pctStyle(v: number | null): React.CSSProperties {
     : { color: '#ff3b5c', background: 'rgba(255,59,92,0.09)', borderRadius: 2, padding: '1px 3px' };
 }
 
-// ── Shared column layout (both halves identical) ──────────────────────────────
-const COLS = '1fr 68px 54px 54px';
+// ── Column layouts ─────────────────────────────────────────────────────────────
+const COLS       = '1fr 68px 54px 54px';
+const YIELD_COLS = '1fr 60px 54px';
 
 function ColLabel({ label }: { label: string }) {
   return (
@@ -46,6 +47,31 @@ function TableHeader() {
       <span style={{ textAlign: 'right' }}>VALOR</span>
       <span style={{ textAlign: 'right' }}>DIA%</span>
       <span style={{ textAlign: 'right' }}>SEM%</span>
+    </div>
+  );
+}
+
+function YieldRow({ entry }: { entry: YieldEntry }) {
+  const rateStr = entry.rate != null ? entry.rate.toFixed(2) + '%' : '—';
+  return (
+    <div className="row" style={{
+      display: 'grid', gridTemplateColumns: YIELD_COLS,
+      gap: 4, height: 22, alignItems: 'center',
+      borderBottom: '1px solid #1a2535',
+    }}>
+      <span style={{ color: '#8ba4bc', fontSize: 10, letterSpacing: 0.2 }}>{entry.label}</span>
+      <span style={{
+        textAlign: 'right', color: '#d4dce8',
+        fontVariantNumeric: 'tabular-nums', fontSize: 11, fontWeight: 500,
+      }}>
+        {rateStr}
+      </span>
+      <span style={{
+        textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10,
+        ...pctStyle(entry.changePct),
+      }}>
+        {fmtPct(entry.changePct)}
+      </span>
     </div>
   );
 }
@@ -82,7 +108,7 @@ function IndexRow({ entry }: { entry: GlobalIndexEntry }) {
 
 export default function GlobalIndicesPanel({ panel: _panel }: { panel: Panel }) {
   useMarketSymbols([]); // ensures global polling starts
-  const { brasil, global, updatedAt } = useMarketData();
+  const { brasil, global, yields, updatedAt } = useMarketData();
   const loading = brasil.length === 0 && global.length === 0;
 
   if (loading) return (
@@ -121,9 +147,26 @@ export default function GlobalIndicesPanel({ panel: _panel }: { panel: Panel }) 
           : global.map(e => <IndexRow key={e.label} entry={e} />)
         }
 
+        {yields.length > 0 && (
+          <>
+            <ColLabel label="Juros Soberanos" />
+            <div style={{
+              display: 'grid', gridTemplateColumns: YIELD_COLS,
+              gap: 4, height: 16, alignItems: 'center',
+              fontSize: 7, color: '#8ba4bc', letterSpacing: 0.5,
+              borderBottom: '1px solid #1a2535',
+            }}>
+              <span>INSTRUMENTO</span>
+              <span style={{ textAlign: 'right' }}>TAXA %</span>
+              <span style={{ textAlign: 'right' }}>DIA%</span>
+            </div>
+            {yields.map(e => <YieldRow key={e.label} entry={e} />)}
+          </>
+        )}
+
         {ts && (
           <div style={{ marginTop: 8, fontSize: 7, color: '#3a556a' }}>
-            Yahoo Finance · Brapi · {ts}
+            Yahoo Finance · Brapi · ECB · {ts}
           </div>
         )}
       </div>

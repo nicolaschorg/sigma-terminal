@@ -10,6 +10,12 @@ export interface IndexEntry {
   group:     'brasil' | 'global';
 }
 
+export interface YieldEntry {
+  label:     string;
+  rate:      number | null;
+  changePct: number | null;
+}
+
 interface QuoteResult {
   price:     number | null;
   changePct: number | null;
@@ -155,6 +161,33 @@ const BRASIL_INDICES: Array<{ label: string; sources: Array<() => Promise<QuoteR
   },
 ];
 
+// Sovereign yields — Yahoo Finance + ECB API
+const YIELD_INSTRUMENTS = [
+  { symbol: '^TNX', label: 'US 10Y' },
+  { symbol: '^IRX', label: 'US 2Y'  },
+];
+
+async function fetchEcbRate(): Promise<number | null> {
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 6_000);
+    const r = await fetch(
+      'https://data-api.ecb.europa.eu/service/data/FM/B.U2.EUR.4F.KR.MRR_FR.LEV?format=jsondata&lastNObservations=1',
+      { cache: 'no-store', signal: ctrl.signal }
+    );
+    if (!r.ok) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d: any = await r.json();
+    const series = d?.dataSets?.[0]?.series;
+    const key    = series ? Object.keys(series)[0] : null;
+    if (!key) return null;
+    const obs    = series[key]?.observations ?? {};
+    const last   = Object.keys(obs).sort((a, b) => +a - +b).pop();
+    const val    = last != null ? obs[last]?.[0] : null;
+    return typeof val === 'number' ? val : null;
+  } catch { return null; }
+}
+
 // Global indices — Yahoo Finance only
 const GLOBAL_INDICES = [
   { symbol: '^GSPC',  label: 'S&P 500'  },
@@ -166,7 +199,7 @@ const GLOBAL_INDICES = [
 ];
 
 export async function GET() {
-  const [brasilResults, globalResults] = await Promise.all([
+  const [brasilResults, globalResults, yieldResults, ecbRate] = await Promise.all([
     Promise.all(
       BRASIL_INDICES.map(async (idx) => {
         const q = await withFallbacks(idx.sources);
@@ -179,14 +212,27 @@ export async function GET() {
         return { label: idx.label, ...q, group: 'global' as const };
       })
     ),
+    Promise.all(
+      YIELD_INSTRUMENTS.map(async ({ symbol, label }) => {
+        const q = await yahooQuote(symbol);
+        return { label, rate: q.price, changePct: q.changePct } as YieldEntry;
+      })
+    ),
+    fetchEcbRate(),
   ]);
 
   const brasil = (brasilResults as IndexEntry[])
     .sort((a, b) => BRASIL_ORDER.indexOf(a.label) - BRASIL_ORDER.indexOf(b.label));
 
+  const yields: YieldEntry[] = [
+    ...yieldResults,
+    { label: 'BCE', rate: ecbRate, changePct: null },
+  ];
+
   return NextResponse.json({
     brasil,
     global: globalResults as IndexEntry[],
+    yields,
     updatedAt: new Date().toISOString(),
   });
 }
