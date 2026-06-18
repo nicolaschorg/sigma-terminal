@@ -160,7 +160,6 @@ export default function RendaFixaPanel({ panel: _panel }: { panel: Panel }) {
   const [loading,   setLoading]   = useState(true);
   const [updatedAt, setUpdatedAt] = useState('');
 
-  const [diLive,    setDiLive]    = useState<DiContract[] | null>(null);
   const [focusNext, setFocusNext] = useState<FocusNext | null>(null);
 
   // Server-side data (Focus-derived fallbacks)
@@ -183,83 +182,6 @@ export default function RendaFixaPanel({ panel: _panel }: { panel: Panel }) {
     load();
     const id = setInterval(load, 30_000);
     return () => { cancelled = true; clearInterval(id); };
-  }, []);
-
-  // B3 referenceRatesProxy — curva PRE, client-side (browser em BR, sem bloqueio Cloudflare)
-  useEffect(() => {
-    let cancelled = false;
-    const B3 = 'https://sistemaswebb3-derivativos.b3.com.br/referenceRatesProxy/';
-    const HDR = { 'Referer': 'https://www.b3.com.br', 'Accept': 'application/json' };
-    const TARGET_YEARS = [2027, 2028, 2029, 2030, 2031, 2032];
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async function b3get(path: string, params: object): Promise<any> {
-      const r = await fetch(B3 + path + '/' + btoa(JSON.stringify(params)), { headers: HDR });
-      if (!r.ok) return null;
-      const text = await r.text();
-      try {
-        let parsed = JSON.parse(text);
-        // B3 double-encodes some responses (outer string containing inner JSON)
-        if (typeof parsed === 'string') parsed = JSON.parse(parsed);
-        return parsed;
-      } catch { return null; }
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function parseRows(results: any[]) {
-      return (results ?? [])
-        .map((r: any) => ({ day252: r.day252 as number, rate: parseFloat(r.rate.replace(',', '.')) }))
-        .filter((r: { day252: number; rate: number }) => isFinite(r.rate));
-    }
-
-    async function fetchCurve(date: string) {
-      const first = await b3get('Search/GetList', { language: 'pt-br', id: 'PRE', pageNumber: 1, pageSize: 30, date });
-      if (!first?.results?.length) return [];
-      const total: number = first.page?.totalPages ?? 1;
-      const rest = await Promise.all(
-        Array.from({ length: total - 1 }, (_, i) =>
-          b3get('Search/GetList', { language: 'pt-br', id: 'PRE', pageNumber: i + 2, pageSize: 30, date })
-        )
-      );
-      return [...parseRows(first.results), ...rest.flatMap((p: any) => parseRows(p?.results))];
-    }
-
-    function closestRate(rows: { day252: number; rate: number }[], target: number) {
-      if (!rows.length) return null;
-      return rows.reduce((a, b) => Math.abs(a.day252 - target) <= Math.abs(b.day252 - target) ? a : b).rate;
-    }
-
-    function approxDu(fromDateStr: string, year: number) {
-      const calDays = (new Date(year, 0, 5).getTime() - new Date(fromDateStr).getTime()) / 86_400_000;
-      return Math.max(1, Math.round(calDays * 252 / 365));
-    }
-
-    const load = async () => {
-      try {
-        const dates = await b3get('Search/GetDate', { language: 'pt-br', id: 'PRE' });
-        if (!Array.isArray(dates) || !dates.length) return;
-        const d1 = dates[0].slice(0, 10);
-        const d2 = dates.length > 1 ? dates[1].slice(0, 10) : null;
-        const [c1, c2] = await Promise.all([fetchCurve(d1), d2 ? fetchCurve(d2) : Promise.resolve([])]);
-        if (!c1.length) return;
-        const contracts: DiContract[] = TARGET_YEARS.map((year, idx) => {
-          const du     = approxDu(d1, year);
-          const rateD1 = closestRate(c1, du);
-          const rateD2 = closestRate(c2, du);
-          return {
-            symbol:      `DI1F${String(year).slice(2)}`,
-            maturity:    `Jan/${String(year).slice(2)}`,
-            rate:        rateD1 != null ? +rateD1.toFixed(2) : null,
-            varBps:      rateD1 != null && rateD2 != null ? Math.round((rateD1 - rateD2) * 100) : null,
-            isReference: idx === 0,
-          };
-        });
-        const valid = contracts.filter(c => c.rate != null);
-        if (!cancelled && valid.length) setDiLive(valid);
-      } catch { /* silently fall back to ANBIMA server data */ }
-    };
-    load();
-    return () => { cancelled = true; };
   }, []);
 
   // BCB Focus — próximo ano
@@ -299,7 +221,7 @@ export default function RendaFixaPanel({ panel: _panel }: { panel: Panel }) {
   const exchange     = macro?.exchange ?? [];
   const rates        = macro?.rates;
   const ntnbBonds    = macro?.tesouroDireto ?? [];
-  const displayDi    = (diLive ?? diCurve).filter(c => c.rate != null);
+  const displayDi    = diCurve.filter(c => c.rate != null);
   const maxRate      = displayDi.length
     ? Math.max(...displayDi.map(c => c.rate ?? 0))
     : 15;
