@@ -197,7 +197,12 @@ export default function RendaFixaPanel({ panel: _panel }: { panel: Panel }) {
       const r = await fetch(B3 + path + '/' + btoa(JSON.stringify(params)), { headers: HDR });
       if (!r.ok) return null;
       const text = await r.text();
-      try { return JSON.parse(text); } catch { return null; }
+      try {
+        let parsed = JSON.parse(text);
+        // B3 double-encodes some responses (outer string containing inner JSON)
+        if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+        return parsed;
+      } catch { return null; }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
