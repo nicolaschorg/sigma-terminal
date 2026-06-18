@@ -31,20 +31,15 @@ async function b3get(path: string, params: object): Promise<any> {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 8_000);
     const r = await fetch(url, { cache: 'no-store', signal: ctrl.signal, headers: B3_HDR });
-    console.log(`[di/b3] ${path} → HTTP ${r.status}`);
-    if (!r.ok) {
-      const body = await r.text().catch(() => '');
-      console.log(`[di/b3] error body: ${body.slice(0, 200)}`);
+    const text = await r.text();
+    console.log(`[di/b3] ${path} → HTTP ${r.status} | first 200 chars: ${text.slice(0, 200)}`);
+    if (!r.ok) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      console.log(`[di/b3] JSON parse failed — likely HTML/Cloudflare block`);
       return null;
     }
-    const json = await r.json();
-    if (path === 'Search/GetDate') console.log('[di/b3] dates:', JSON.stringify(json).slice(0, 120));
-    if (path === 'Search/GetList') {
-      const n = json?.results?.length ?? 0;
-      const sample = json?.results?.[0];
-      console.log(`[di/b3] GetList rows=${n} page=${JSON.stringify(json?.page)} sample=${JSON.stringify(sample)}`);
-    }
-    return json;
   } catch (err) {
     console.log(`[di/b3] fetch exception for ${path}:`, String(err));
     return null;
