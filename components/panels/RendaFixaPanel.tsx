@@ -285,7 +285,7 @@ export default function RendaFixaPanel({ panel: _panel }: { panel: Panel }) {
       <div style={{ overflowY: 'auto', padding: '4px 12px 8px 10px' }}>
         <SubLabel text="CURVA DI — B3" />
         <div style={{ fontSize: 7, color: '#3a556a', marginBottom: 4, lineHeight: 1.4 }}>
-          Taxa pré dos contratos DI1 · fechamento D-1 · B3
+          Taxa indicativa LTN/NTN-F · ANBIMA · fechamento D-1
         </div>
 
         <div style={{
