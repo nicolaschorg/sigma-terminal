@@ -6,98 +6,67 @@ export interface DiContract {
   symbol:      string;
   maturity:    string;
   rate:        number | null;
-  varBps:      number | null;   // round((rateD1 - rateD2) * 100)
+  varBps:      number | null;
   isReference: boolean;
 }
 
-// DI1 contracts to display (Jan of each year)
+// DI1 contracts — match LTN/NTN-F maturities at Jan 1 of each year
 const TARGET_YEARS = [2027, 2028, 2029, 2030, 2031, 2032];
 
-const B3_BASE = 'https://sistemaswebb3-derivativos.b3.com.br/referenceRatesProxy/';
-const B3_HDR  = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-  'Referer':    'https://www.b3.com.br',
-  'Accept':     'application/json',
-};
-
-function b3url(path: string, params: object): string {
-  return B3_BASE + path + '/' + Buffer.from(JSON.stringify(params)).toString('base64');
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function b3get(path: string, params: object): Promise<any> {
-  const url = b3url(path, params);
+// Fetch ANBIMA daily flat file: ms{YYMMDD}.txt
+// Returns Map<"YYYYMMDD" maturity, TxIndicativas rate>
+async function fetchAnbimaRates(isoDate: string): Promise<Map<string, number>> {
+  const [yyyy, mm, dd] = isoDate.split('-');
+  const url = `https://www.anbima.com.br/informacoes/merc-sec/arqs/ms${yyyy.slice(2)}${mm}${dd}.txt`;
   try {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 8_000);
-    const r = await fetch(url, { cache: 'no-store', signal: ctrl.signal, headers: B3_HDR });
+    const r = await fetch(url, {
+      cache:   'no-store',
+      signal:  ctrl.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+    if (!r.ok) return new Map();
     const text = await r.text();
-    console.log(`[di/b3] ${path} → HTTP ${r.status} | first 200 chars: ${text.slice(0, 200)}`);
-    if (!r.ok) return null;
-    try {
-      return JSON.parse(text);
-    } catch {
-      console.log(`[di/b3] JSON parse failed — likely HTML/Cloudflare block`);
-      return null;
+    const map  = new Map<string, number>();
+    for (const line of text.split('\n')) {
+      const f = line.split('@');
+      if (f.length < 8) continue;
+      const titulo = f[0].trim();
+      // LTN (zero-coupon) and NTN-F (semi-annual coupon) are prefixed — closest to DI curve
+      if (titulo !== 'LTN' && titulo !== 'NTN-F') continue;
+      const maturity = f[4].trim();                          // DataVencimento "20280101"
+      const rate     = parseFloat(f[7].trim().replace(',', '.')); // TxIndicativas
+      if (maturity.length === 8 && isFinite(rate)) map.set(maturity, rate);
     }
-  } catch (err) {
-    console.log(`[di/b3] fetch exception for ${path}:`, String(err));
-    return null;
+    return map;
+  } catch { return new Map(); }
+}
+
+// Try up to 5 trading days back until a valid file is found
+async function findRecentAnbima(beforeIso: string | null, maxBack = 5): Promise<{ date: string; rates: Map<string, number> } | null> {
+  const ref = beforeIso ? new Date(beforeIso) : new Date();
+  for (let i = 1; i <= maxBack; i++) {
+    const d   = new Date(ref);
+    d.setUTCDate(d.getUTCDate() - i);
+    const iso   = d.toISOString().slice(0, 10);
+    const rates = await fetchAnbimaRates(iso);
+    if (rates.size > 0) return { date: iso, rates };
   }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseRows(results: any[]): { day252: number; rate: number }[] {
-  return (results ?? [])
-    .map(r => ({ day252: r.day252 as number, rate: parseFloat((r.rate as string).replace(',', '.')) }))
-    .filter(r => isFinite(r.rate));
-}
-
-async function fetchPreCurve(date: string): Promise<{ day252: number; rate: number }[]> {
-  const first = await b3get('Search/GetList', { language: 'pt-br', id: 'PRE', pageNumber: 1, pageSize: 30, date });
-  if (!first?.results?.length) return [];
-  const totalPages: number = first.page?.totalPages ?? 1;
-  const rest = await Promise.all(
-    Array.from({ length: totalPages - 1 }, (_, i) =>
-      b3get('Search/GetList', { language: 'pt-br', id: 'PRE', pageNumber: i + 2, pageSize: 30, date })
-    )
-  );
-  return [...parseRows(first.results), ...rest.flatMap(p => parseRows(p?.results))];
-}
-
-// Approximate business days from D-1 date string to Jan of targetYear
-function approxDu(fromDateStr: string, targetYear: number): number {
-  const from     = new Date(fromDateStr);
-  const to       = new Date(targetYear, 0, 5); // ~1st business day of Jan
-  const calDays  = (to.getTime() - from.getTime()) / 86_400_000;
-  return Math.max(1, Math.round(calDays * 252 / 365));
-}
-
-function closestRate(rows: { day252: number; rate: number }[], target: number): number | null {
-  if (!rows.length) return null;
-  return rows.reduce((a, b) =>
-    Math.abs(a.day252 - target) <= Math.abs(b.day252 - target) ? a : b
-  ).rate;
+  return null;
 }
 
 export async function GET() {
-  console.log('[di] GET called');
-  const datesData = await b3get('Search/GetDate', { language: 'pt-br', id: 'PRE' });
-  console.log('[di] datesData type:', Array.isArray(datesData) ? `array[${datesData.length}]` : typeof datesData);
-  if (!Array.isArray(datesData) || !datesData.length) return NextResponse.json([]);
+  // Fetch D-1 then D-2 sequentially (need to know D-1 date before searching D-2)
+  const d1 = await findRecentAnbima(null);
+  if (!d1) return NextResponse.json([]);
 
-  const d1 = datesData[0].slice(0, 10);
-  const d2 = datesData.length > 1 ? datesData[1].slice(0, 10) : null;
-
-  const [curveD1, curveD2] = await Promise.all([
-    fetchPreCurve(d1),
-    d2 ? fetchPreCurve(d2) : Promise.resolve([]),
-  ]);
+  const d2 = await findRecentAnbima(d1.date);
 
   const contracts: DiContract[] = TARGET_YEARS.map((year, idx) => {
-    const du     = approxDu(d1, year);
-    const rateD1 = closestRate(curveD1, du);
-    const rateD2 = closestRate(curveD2, du);
+    const key    = `${year}0101`;
+    const rateD1 = d1.rates.get(key) ?? null;
+    const rateD2 = d2?.rates.get(key) ?? null;
     const varBps = rateD1 != null && rateD2 != null
       ? Math.round((rateD1 - rateD2) * 100)
       : null;
@@ -110,7 +79,5 @@ export async function GET() {
     };
   });
 
-  const result = contracts.filter(c => c.rate != null);
-  console.log(`[di] returning ${result.length} contracts, curveD1=${curveD1.length} rows, curveD2=${curveD2.length} rows`);
-  return NextResponse.json(result);
+  return NextResponse.json(contracts.filter(c => c.rate != null));
 }
