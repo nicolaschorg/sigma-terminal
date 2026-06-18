@@ -259,12 +259,12 @@ async function fetchEcbYield(): Promise<YieldEntry> {
       'https://data-api.ecb.europa.eu/service/data/YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_10Y?format=jsondata&lastNObservations=2',
       { cache: 'no-store', signal: ctrl.signal }
     );
-    if (!r.ok) return { label, rate: null, changePct: null };
+    if (!r.ok) return { label, rate: null, changeBps: null };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d: any = await r.json();
     const series = d?.dataSets?.[0]?.series;
     const key    = series ? Object.keys(series)[0] : null;
-    if (!key) return { label, rate: null, changePct: null };
+    if (!key) return { label, rate: null, changeBps: null };
     const obs    = series[key]?.observations ?? {};
     const sorted = Object.keys(obs).sort((a, b) => +a - +b);
     const latest = sorted.length > 0 ? (obs[sorted[sorted.length - 1]]?.[0] as number) : null;
@@ -284,10 +284,10 @@ async function fetchBoeGilt(): Promise<YieldEntry> {
       'https://www.bankofengland.co.uk/boeapps/database/_iadb-FromShowColumns.asp?csv.x=yes&Datefrom=01/Mar/2026&Dateto=now&SeriesCodes=IUDMNZC&CSVF=TN&UsingCodes=Y',
       { cache: 'no-store', signal: ctrl.signal, headers: { 'User-Agent': 'Mozilla/5.0' } }
     );
-    if (!r.ok) return { label, rate: null, changePct: null };
+    if (!r.ok) return { label, rate: null, changeBps: null };
     const text  = await r.text();
     const lines = text.trim().split('\n').filter(l => /^\d/.test(l.trim()));
-    if (!lines.length) return { label, rate: null, changePct: null };
+    if (!lines.length) return { label, rate: null, changeBps: null };
     const latest = parseFloat(lines[lines.length - 1].split(',')[1]);
     const prev   = lines.length > 1 ? parseFloat(lines[lines.length - 2].split(',')[1]) : NaN;
     const changeBps = isFinite(latest) && isFinite(prev)
