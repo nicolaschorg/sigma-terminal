@@ -2,76 +2,100 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-// Focus years 2026-2032 → DI curve labels Jan/26 … Jan/32
-const FOCUS_YEARS = [2026, 2027, 2028, 2029, 2030, 2031, 2032];
-
 export interface DiContract {
   symbol:      string;
   maturity:    string;
   rate:        number | null;
-  varDay:      number | null;
+  varBps:      number | null;   // round((rateD1 - rateD2) * 100)
   isReference: boolean;
 }
 
-function abortAfter(ms: number) {
-  const ctrl = new AbortController();
-  setTimeout(() => ctrl.abort(), ms);
-  return ctrl;
+// DI1 contracts to display (Jan of each year)
+const TARGET_YEARS = [2027, 2028, 2029, 2030, 2031, 2032];
+
+const B3_BASE = 'https://sistemaswebb3-derivativos.b3.com.br/referenceRatesProxy/';
+const B3_HDR  = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+  'Referer':    'https://www.b3.com.br',
+  'Accept':     'application/json',
+};
+
+function b3url(path: string, params: object): string {
+  return B3_BASE + path + '/' + Buffer.from(JSON.stringify(params)).toString('base64');
 }
 
-// One request per year — avoids $top pagination issues when one year dominates
-async function fetchFocusSelic(): Promise<Map<number, number>> {
-  const map = new Map<number, number>();
-  await Promise.allSettled(
-    FOCUS_YEARS.map(async (year) => {
-      try {
-        const r = await fetch(
-          `https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais` +
-          `?$filter=Indicador%20eq%20'Selic'%20and%20DataReferencia%20eq%20'${year}'%20and%20baseCalculo%20eq%200` +
-          `&$orderby=Data%20desc&$top=1&$format=json&$select=Mediana`,
-          { cache: 'no-store', signal: abortAfter(8_000).signal }
-        );
-        if (!r.ok) return;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const json: any = await r.json();
-        const val = json?.value?.[0]?.Mediana;
-        if (val != null) map.set(year, parseFloat(String(val).replace(',', '.')));
-      } catch { /* ignore */ }
-    })
-  );
-  return map;
-}
-
-async function fetchCurrentSelic(): Promise<number | null> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function b3get(path: string, params: object): Promise<any> {
   try {
-    const r = await fetch(
-      'https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json',
-      { cache: 'no-store', signal: abortAfter(6_000).signal }
-    );
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 8_000);
+    const r = await fetch(b3url(path, params), { cache: 'no-store', signal: ctrl.signal, headers: B3_HDR });
     if (!r.ok) return null;
-    const d: { valor: string }[] = await r.json();
-    return d[0]?.valor ? parseFloat(d[0].valor.replace(',', '.')) : null;
+    return r.json();
   } catch { return null; }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseRows(results: any[]): { day252: number; rate: number }[] {
+  return (results ?? [])
+    .map(r => ({ day252: r.day252 as number, rate: parseFloat((r.rate as string).replace(',', '.')) }))
+    .filter(r => isFinite(r.rate));
+}
+
+async function fetchPreCurve(date: string): Promise<{ day252: number; rate: number }[]> {
+  const first = await b3get('Search/GetList', { language: 'pt-br', id: 'PRE', pageNumber: 1, pageSize: 30, date });
+  if (!first?.results?.length) return [];
+  const totalPages: number = first.page?.totalPages ?? 1;
+  const rest = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, i) =>
+      b3get('Search/GetList', { language: 'pt-br', id: 'PRE', pageNumber: i + 2, pageSize: 30, date })
+    )
+  );
+  return [...parseRows(first.results), ...rest.flatMap(p => parseRows(p?.results))];
+}
+
+// Approximate business days from D-1 date string to Jan of targetYear
+function approxDu(fromDateStr: string, targetYear: number): number {
+  const from     = new Date(fromDateStr);
+  const to       = new Date(targetYear, 0, 5); // ~1st business day of Jan
+  const calDays  = (to.getTime() - from.getTime()) / 86_400_000;
+  return Math.max(1, Math.round(calDays * 252 / 365));
+}
+
+function closestRate(rows: { day252: number; rate: number }[], target: number): number | null {
+  if (!rows.length) return null;
+  return rows.reduce((a, b) =>
+    Math.abs(a.day252 - target) <= Math.abs(b.day252 - target) ? a : b
+  ).rate;
+}
+
 export async function GET() {
-  const [focusMap, currentSelic] = await Promise.all([
-    fetchFocusSelic(),
-    fetchCurrentSelic(),
+  const datesData = await b3get('Search/GetDate', { language: 'pt-br', id: 'PRE' });
+  if (!Array.isArray(datesData) || !datesData.length) return NextResponse.json([]);
+
+  const d1 = datesData[0].slice(0, 10);
+  const d2 = datesData.length > 1 ? datesData[1].slice(0, 10) : null;
+
+  const [curveD1, curveD2] = await Promise.all([
+    fetchPreCurve(d1),
+    d2 ? fetchPreCurve(d2) : Promise.resolve([]),
   ]);
 
-  const contracts: DiContract[] = FOCUS_YEARS.map((year) => {
-    const sym   = `DI1F${String(year).slice(2)}`;
-    const label = `Jan/${String(year).slice(2)}`;
-    const rate  = focusMap.get(year) ?? (year === FOCUS_YEARS[0] ? currentSelic : null);
+  const contracts: DiContract[] = TARGET_YEARS.map((year, idx) => {
+    const du     = approxDu(d1, year);
+    const rateD1 = closestRate(curveD1, du);
+    const rateD2 = closestRate(curveD2, du);
+    const varBps = rateD1 != null && rateD2 != null
+      ? Math.round((rateD1 - rateD2) * 100)
+      : null;
     return {
-      symbol:      sym,
-      maturity:    label,
-      rate:        rate != null ? +rate.toFixed(2) : null,
-      varDay:      null,
-      isReference: true,
+      symbol:      `DI1F${String(year).slice(2)}`,
+      maturity:    `Jan/${String(year).slice(2)}`,
+      rate:        rateD1 != null ? +rateD1.toFixed(2) : null,
+      varBps,
+      isReference: idx === 0,
     };
   });
 
-  return NextResponse.json(contracts);
+  return NextResponse.json(contracts.filter(c => c.rate != null));
 }

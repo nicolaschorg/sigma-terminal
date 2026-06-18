@@ -27,10 +27,9 @@ function pctStyle(v: number | null): React.CSSProperties {
     : { color: '#ff3b5c', background: 'rgba(255,59,92,0.09)', borderRadius: 2, padding: '1px 3px' };
 }
 
-// For yields: rising rate = red (bond prices fall), falling = green
 function bpsStyle(v: number | null): React.CSSProperties {
   if (v == null) return { color: '#5a7a9a' };
-  return v <= 0
+  return v >= 0
     ? { color: '#00c076', background: 'rgba(0,192,118,0.09)', borderRadius: 2, padding: '1px 3px' }
     : { color: '#ff3b5c', background: 'rgba(255,59,92,0.09)', borderRadius: 2, padding: '1px 3px' };
 }

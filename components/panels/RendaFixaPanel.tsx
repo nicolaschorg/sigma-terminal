@@ -110,11 +110,11 @@ function NtnbRow({ b }: { b: TdBond }) {
   );
 }
 
-const DI_COLS = '40px 54px 46px 1fr';
+const DI_COLS = '40px 54px 52px 1fr';
 
 function DiRow({ c, maxRate }: { c: DiContract; maxRate: number }) {
   const barW   = maxRate > 0 && c.rate != null ? (c.rate / maxRate) * 100 : 0;
-  const dayCol = pctCol(c.varDay);
+  const bpsCol = c.varBps == null ? '#3a556a' : c.varBps >= 0 ? '#00c076' : '#ff3b5c';
   return (
     <div className="row" style={{
       display: 'grid', gridTemplateColumns: DI_COLS,
@@ -134,10 +134,10 @@ function DiRow({ c, maxRate }: { c: DiContract; maxRate: number }) {
         {c.rate != null ? `${c.rate.toFixed(2)}%` : '—'}
       </span>
       <span style={{
-        textAlign: 'right', color: dayCol,
+        textAlign: 'right', color: bpsCol,
         fontVariantNumeric: 'tabular-nums', fontSize: 9,
       }}>
-        {c.varDay == null ? '—' : `${c.varDay >= 0 ? '+' : ''}${c.varDay.toFixed(2)}%`}
+        {c.varBps == null ? '—' : `${c.varBps >= 0 ? '+' : ''}${c.varBps} bps`}
       </span>
       <div style={{ paddingLeft: 3, alignSelf: 'center' }}>
         <div style={{ height: 3, background: '#1a2535', borderRadius: 2 }}>
@@ -153,25 +153,6 @@ function DiRow({ c, maxRate }: { c: DiContract; maxRate: number }) {
   );
 }
 
-const MATURITY_MAP: Record<string, string> = {
-  DI1F27: 'Jan/27', DI1F28: 'Jan/28', DI1F29: 'Jan/29',
-  DI1F30: 'Jan/30', DI1F31: 'Jan/31', DI1F32: 'Jan/32',
-};
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseB3DiItem(item: any): DiContract | null {
-  const sym = String(item.symbol ?? item.cd ?? item.codigoNegociacao ?? '');
-  if (!MATURITY_MAP[sym]) return null;
-  const rate = item.tradeRate ?? item.lastTrade ?? item.ultimoPreco ?? item.rate ?? null;
-  const varDay = item.changePercent ?? item.variacao ?? item.oscilation ?? null;
-  return {
-    symbol:      sym,
-    maturity:    MATURITY_MAP[sym],
-    rate:        rate != null ? +Number(rate).toFixed(2) : null,
-    varDay:      varDay != null ? +Number(varDay).toFixed(2) : null,
-    isReference: false,
-  };
-}
 
 export default function RendaFixaPanel({ panel: _panel }: { panel: Panel }) {
   const [diCurve,   setDiCurve]   = useState<DiContract[]>([]);
@@ -179,8 +160,6 @@ export default function RendaFixaPanel({ panel: _panel }: { panel: Panel }) {
   const [loading,   setLoading]   = useState(true);
   const [updatedAt, setUpdatedAt] = useState('');
 
-  const [diLive,    setDiLive]    = useState<DiContract[] | null>(null);
-  const [diTried,   setDiTried]   = useState(false);
   const [focusNext, setFocusNext] = useState<FocusNext | null>(null);
 
   // Server-side data (Focus-derived fallbacks)
@@ -203,30 +182,6 @@ export default function RendaFixaPanel({ panel: _panel }: { panel: Panel }) {
     load();
     const id = setInterval(load, 30_000);
     return () => { cancelled = true; clearInterval(id); };
-  }, []);
-
-  // Client-side B3 DI futures
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const r = await fetch(
-          'https://sistemaswebb3-derivativos.b3.com.br/futures-proxy/futures/DI1'
-        );
-        if (!r.ok) { setDiTried(true); return; }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const data: any = await r.json();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const items: any[] = Array.isArray(data) ? data : (data?.items ?? data?.data ?? []);
-        if (!items.length) { setDiTried(true); return; }
-        const contracts = items
-          .map(parseB3DiItem)
-          .filter((c): c is DiContract => c != null)
-          .sort((a, b) => a.symbol.localeCompare(b.symbol));
-        if (contracts.length) setDiLive(contracts);
-        setDiTried(true);
-      } catch { setDiTried(true); }
-    };
-    load();
   }, []);
 
   // BCB Focus — próximo ano
@@ -266,7 +221,7 @@ export default function RendaFixaPanel({ panel: _panel }: { panel: Panel }) {
   const exchange     = macro?.exchange ?? [];
   const rates        = macro?.rates;
   const ntnbBonds    = macro?.tesouroDireto ?? [];
-  const displayDi    = diLive ?? diCurve;
+  const displayDi    = diCurve.filter(c => c.rate != null);
   const maxRate      = displayDi.length
     ? Math.max(...displayDi.map(c => c.rate ?? 0))
     : 15;
@@ -328,9 +283,9 @@ export default function RendaFixaPanel({ panel: _panel }: { panel: Panel }) {
 
       {/* ── RIGHT: SELIC ESPERADA + FOCUS PRÓXIMO ANO ──────────── */}
       <div style={{ overflowY: 'auto', padding: '4px 12px 8px 10px' }}>
-        <SubLabel text="SELIC Esperada — Focus BCB" />
+        <SubLabel text="CURVA DI — B3" />
         <div style={{ fontSize: 7, color: '#3a556a', marginBottom: 4, lineHeight: 1.4 }}>
-          Expectativa mediana do mercado para SELIC no fim de cada ano (Boletim Focus/BCB)
+          Taxa pré dos contratos DI1 · fechamento D-1 · B3
         </div>
 
         <div style={{
@@ -341,7 +296,7 @@ export default function RendaFixaPanel({ panel: _panel }: { panel: Panel }) {
         }}>
           <span>VENC</span>
           <span style={{ textAlign: 'right' }}>TAXA</span>
-          <span style={{ textAlign: 'right' }}>DIA</span>
+          <span style={{ textAlign: 'right' }}>DIA (bp)</span>
           <span style={{ paddingLeft: 3 }}>CURVA</span>
         </div>
 
