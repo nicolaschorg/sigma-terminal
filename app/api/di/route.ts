@@ -26,13 +26,29 @@ function b3url(path: string, params: object): string {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function b3get(path: string, params: object): Promise<any> {
+  const url = b3url(path, params);
   try {
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 8_000);
-    const r = await fetch(b3url(path, params), { cache: 'no-store', signal: ctrl.signal, headers: B3_HDR });
-    if (!r.ok) return null;
-    return r.json();
-  } catch { return null; }
+    const r = await fetch(url, { cache: 'no-store', signal: ctrl.signal, headers: B3_HDR });
+    console.log(`[di/b3] ${path} → HTTP ${r.status}`);
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      console.log(`[di/b3] error body: ${body.slice(0, 200)}`);
+      return null;
+    }
+    const json = await r.json();
+    if (path === 'Search/GetDate') console.log('[di/b3] dates:', JSON.stringify(json).slice(0, 120));
+    if (path === 'Search/GetList') {
+      const n = json?.results?.length ?? 0;
+      const sample = json?.results?.[0];
+      console.log(`[di/b3] GetList rows=${n} page=${JSON.stringify(json?.page)} sample=${JSON.stringify(sample)}`);
+    }
+    return json;
+  } catch (err) {
+    console.log(`[di/b3] fetch exception for ${path}:`, String(err));
+    return null;
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,7 +86,9 @@ function closestRate(rows: { day252: number; rate: number }[], target: number): 
 }
 
 export async function GET() {
+  console.log('[di] GET called');
   const datesData = await b3get('Search/GetDate', { language: 'pt-br', id: 'PRE' });
+  console.log('[di] datesData type:', Array.isArray(datesData) ? `array[${datesData.length}]` : typeof datesData);
   if (!Array.isArray(datesData) || !datesData.length) return NextResponse.json([]);
 
   const d1 = datesData[0].slice(0, 10);
@@ -97,5 +115,7 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json(contracts.filter(c => c.rate != null));
+  const result = contracts.filter(c => c.rate != null);
+  console.log(`[di] returning ${result.length} contracts, curveD1=${curveD1.length} rows, curveD2=${curveD2.length} rows`);
+  return NextResponse.json(result);
 }
