@@ -15,9 +15,22 @@ function fmtPct(v: number | null): string {
   return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
 }
 
+function fmtBps(v: number | null): string {
+  if (v == null) return '—';
+  return (v >= 0 ? '+' : '') + v.toFixed(1) + 'bp';
+}
+
 function pctStyle(v: number | null): React.CSSProperties {
   if (v == null) return { color: '#5a7a9a' };
   return v >= 0
+    ? { color: '#00c076', background: 'rgba(0,192,118,0.09)', borderRadius: 2, padding: '1px 3px' }
+    : { color: '#ff3b5c', background: 'rgba(255,59,92,0.09)', borderRadius: 2, padding: '1px 3px' };
+}
+
+// For yields: rising rate = red (bond prices fall), falling = green
+function bpsStyle(v: number | null): React.CSSProperties {
+  if (v == null) return { color: '#5a7a9a' };
+  return v <= 0
     ? { color: '#00c076', background: 'rgba(0,192,118,0.09)', borderRadius: 2, padding: '1px 3px' }
     : { color: '#ff3b5c', background: 'rgba(255,59,92,0.09)', borderRadius: 2, padding: '1px 3px' };
 }
@@ -68,9 +81,9 @@ function YieldRow({ entry }: { entry: YieldEntry }) {
       </span>
       <span style={{
         textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10,
-        ...pctStyle(entry.changePct),
+        ...bpsStyle(entry.changeBps),
       }}>
-        {fmtPct(entry.changePct)}
+        {fmtBps(entry.changeBps)}
       </span>
     </div>
   );
@@ -158,7 +171,7 @@ export default function GlobalIndicesPanel({ panel: _panel }: { panel: Panel }) 
             }}>
               <span>INSTRUMENTO</span>
               <span style={{ textAlign: 'right' }}>TAXA %</span>
-              <span style={{ textAlign: 'right' }}>DIA%</span>
+              <span style={{ textAlign: 'right' }}>VAR (bp)</span>
             </div>
             {yields.map(e => <YieldRow key={e.label} entry={e} />)}
           </div>

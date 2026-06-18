@@ -13,7 +13,7 @@ export interface IndexEntry {
 export interface YieldEntry {
   label:     string;
   rate:      number | null;
-  changePct: number | null;
+  changeBps: number | null;   // absolute change in basis points (1bp = 0.01pp)
 }
 
 interface QuoteResult {
@@ -161,7 +161,90 @@ const BRASIL_INDICES: Array<{ label: string; sources: Array<() => Promise<QuoteR
   },
 ];
 
-// Sovereign yields — Yahoo Finance + ECB API
+// ── Sovereign yield helpers ────────────────────────────────────────────────────
+
+// Yahoo yield: uses close-to-close absolute change → basis points
+async function yahooYield(symbol: string, label: string): Promise<YieldEntry> {
+  const q = await yahooQuote(symbol);
+  let changeBps: number | null = null;
+  // changePct = (price - prev) / prev * 100  =>  prev = price*100/(100+changePct)
+  // changeBps = (price - prev) * 100
+  if (q.price != null && q.changePct != null) {
+    const prev  = q.price * 100 / (100 + q.changePct);
+    changeBps   = Math.round((q.price - prev) * 100 * 10) / 10;
+  }
+  return { label, rate: q.price, changeBps };
+}
+
+// B3 yield: PRE curve (DI x Pré), ~10Y maturity (≈2520 business days), D-1 close
+async function fetchB3Yield(): Promise<YieldEntry> {
+  const label    = 'BR 10Y (DI)';
+  const TARGET   = 2520;
+  const B3_BASE  = 'https://sistemaswebb3-derivativos.b3.com.br/referenceRatesProxy/';
+  const B3_HDR   = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    'Referer':    'https://www.b3.com.br',
+    'Accept':     'application/json',
+  };
+
+  function b3url(path: string, params: object): string {
+    return B3_BASE + path + '/' + Buffer.from(JSON.stringify(params)).toString('base64');
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function b3get(path: string, params: object): Promise<any> {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 8_000);
+    const r = await fetch(b3url(path, params), { cache: 'no-store', signal: ctrl.signal, headers: B3_HDR });
+    if (!r.ok) return null;
+    return r.json();
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function parseRows(results: any[]): { day252: number; rate: number }[] {
+    return (results ?? [])
+      .map(r => ({ day252: r.day252 as number, rate: parseFloat((r.rate as string).replace(',', '.')) }))
+      .filter(r => isFinite(r.rate));
+  }
+
+  async function fetchCurve(date: string): Promise<{ day252: number; rate: number }[]> {
+    const first = await b3get('Search/GetList', { language: 'pt-br', id: 'PRE', pageNumber: 1, pageSize: 30, date });
+    if (!first?.results?.length) return [];
+    const totalPages: number = first.page?.totalPages ?? 1;
+    const rest = await Promise.all(
+      Array.from({ length: totalPages - 1 }, (_, i) =>
+        b3get('Search/GetList', { language: 'pt-br', id: 'PRE', pageNumber: i + 2, pageSize: 30, date })
+      )
+    );
+    return [...parseRows(first.results), ...rest.flatMap(p => parseRows(p?.results))];
+  }
+
+  function closestRate(rows: { day252: number; rate: number }[]): number | null {
+    if (!rows.length) return null;
+    return rows.reduce((a, b) => Math.abs(a.day252 - TARGET) <= Math.abs(b.day252 - TARGET) ? a : b).rate;
+  }
+
+  try {
+    const datesData = await b3get('Search/GetDate', { language: 'pt-br', id: 'PRE' });
+    if (!Array.isArray(datesData) || !datesData.length) return { label, rate: null, changeBps: null };
+    const d1 = datesData[0].slice(0, 10);
+    const d2 = datesData.length > 1 ? datesData[1].slice(0, 10) : null;
+
+    const [curveD1, curveD2] = await Promise.all([
+      fetchCurve(d1),
+      d2 ? fetchCurve(d2) : Promise.resolve([]),
+    ]);
+
+    const rateD1 = closestRate(curveD1);
+    const rateD2 = closestRate(curveD2);
+    const changeBps = rateD1 != null && rateD2 != null
+      ? Math.round((rateD1 - rateD2) * 100 * 10) / 10
+      : null;
+
+    return { label, rate: rateD1, changeBps };
+  } catch { return { label, rate: null, changeBps: null }; }
+}
+
 const YIELD_INSTRUMENTS = [
   { symbol: '^TNX', label: 'US 10Y' },
   { symbol: '^IRX', label: 'US 2Y'  },
@@ -186,10 +269,10 @@ async function fetchEcbYield(): Promise<YieldEntry> {
     const sorted = Object.keys(obs).sort((a, b) => +a - +b);
     const latest = sorted.length > 0 ? (obs[sorted[sorted.length - 1]]?.[0] as number) : null;
     const prev   = sorted.length > 1 ? (obs[sorted[sorted.length - 2]]?.[0] as number) : null;
-    const changePct = latest != null && prev != null && prev > 0
-      ? ((latest - prev) / prev) * 100 : null;
-    return { label, rate: typeof latest === 'number' ? latest : null, changePct };
-  } catch { return { label, rate: null, changePct: null }; }
+    const changeBps = latest != null && prev != null
+      ? Math.round((latest - prev) * 100 * 10) / 10 : null;
+    return { label, rate: typeof latest === 'number' ? latest : null, changeBps };
+  } catch { return { label, rate: null, changeBps: null }; }
 }
 
 async function fetchBoeGilt(): Promise<YieldEntry> {
@@ -207,10 +290,10 @@ async function fetchBoeGilt(): Promise<YieldEntry> {
     if (!lines.length) return { label, rate: null, changePct: null };
     const latest = parseFloat(lines[lines.length - 1].split(',')[1]);
     const prev   = lines.length > 1 ? parseFloat(lines[lines.length - 2].split(',')[1]) : NaN;
-    const changePct = isFinite(latest) && isFinite(prev) && prev > 0
-      ? ((latest - prev) / prev) * 100 : null;
-    return { label, rate: isFinite(latest) ? latest : null, changePct };
-  } catch { return { label, rate: null, changePct: null }; }
+    const changeBps = isFinite(latest) && isFinite(prev)
+      ? Math.round((latest - prev) * 100 * 10) / 10 : null;
+    return { label, rate: isFinite(latest) ? latest : null, changeBps };
+  } catch { return { label, rate: null, changeBps: null }; }
 }
 
 async function fetchEcbRate(): Promise<number | null> {
@@ -245,7 +328,7 @@ const GLOBAL_INDICES = [
 ];
 
 export async function GET() {
-  const [brasilResults, globalResults, yieldResults, ecbYield, boeGilt, ecbRate] = await Promise.all([
+  const [brasilResults, globalResults, usYields, ecbYield, boeGilt, brYield, ecbRate] = await Promise.all([
     Promise.all(
       BRASIL_INDICES.map(async (idx) => {
         const q = await withFallbacks(idx.sources);
@@ -258,14 +341,10 @@ export async function GET() {
         return { label: idx.label, ...q, group: 'global' as const };
       })
     ),
-    Promise.all(
-      YIELD_INSTRUMENTS.map(async ({ symbol, label }) => {
-        const q = await yahooQuote(symbol);
-        return { label, rate: q.price, changePct: q.changePct } as YieldEntry;
-      })
-    ),
+    Promise.all(YIELD_INSTRUMENTS.map(({ symbol, label }) => yahooYield(symbol, label))),
     fetchEcbYield(),
     fetchBoeGilt(),
+    fetchB3Yield(),
     fetchEcbRate(),
   ]);
 
@@ -273,10 +352,11 @@ export async function GET() {
     .sort((a, b) => BRASIL_ORDER.indexOf(a.label) - BRASIL_ORDER.indexOf(b.label));
 
   const yields: YieldEntry[] = [
-    ...yieldResults,          // US 10Y, US 2Y
-    ecbYield,                 // EUR 10Y (AAA)
-    boeGilt,                  // UK 10Y (Gilt)
-    { label: 'BCE', rate: ecbRate, changePct: null },
+    ...usYields,                                        // US 10Y, US 2Y
+    ecbYield,                                           // EUR 10Y (AAA)
+    boeGilt,                                            // UK 10Y (Gilt)
+    brYield,                                            // BR 10Y (DI)
+    { label: 'BCE', rate: ecbRate, changeBps: null },
   ];
 
   return NextResponse.json({

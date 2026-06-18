@@ -19,7 +19,7 @@ export interface GlobalIndexEntry {
 export interface YieldEntry {
   label:     string;
   rate:      number | null;
-  changePct: number | null;
+  changeBps: number | null;
 }
 
 // ── Module-level subscription state (not Zustand state) ───────────────────────
